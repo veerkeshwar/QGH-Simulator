@@ -1,0 +1,2663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>QGH Simulator</title>
+    <!-- Tailwind CSS v4 browser build (JIT, arbitrary values supported) -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- Lucide Icons (pinned) -->
+    <script src="https://unpkg.com/lucide@0.294.0/dist/umd/lucide.min.js"></script>
+    <!-- PeerJS for P2P device sync -->
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <style>
+        .neon-glow {
+            text-shadow: 0 0 10px rgba(16, 185, 129, 0.60);
+        }
+        .neon-border {
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.15);
+        }
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            background: #1e293b;
+            border-radius: 4px;
+            height: 6px;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #10b981;
+            cursor: pointer;
+            border: 2px solid #064e3b;
+            box-shadow: 0 0 8px rgba(16, 185, 129, 0.8);
+        }
+        /* Custom styles for clean numerical input boxes */
+        .num-input {
+            background-color: #0f172a;
+            border: 1px solid #065f46;
+            color: #34d399;
+            text-align: center;
+            font-weight: bold;
+        }
+        .num-input:focus {
+            outline: none;
+            border-color: #10b981;
+            box-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
+        }
+        /* Hide native number input spinners — they cause horizontal overflow on mobile */
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type="number"] { -moz-appearance: textfield; }
+        /* Hide scrollbars for the tabs overflow */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        /* Role selection overlay */
+        #role-overlay {
+            background: radial-gradient(ellipse at center, #0d1f17 0%, #020a06 100%);
+        }
+        .role-card {
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        .role-card:active {
+            transform: scale(0.97);
+        }
+        /* P2P connection icon button */
+        #p2p-icon-btn {
+            transition: all 0.25s ease;
+        }
+        #p2p-icon-btn:active { transform: scale(0.90); }
+        @keyframes pulse-green {
+            0%, 100% { filter: drop-shadow(0 0 3px rgba(52,211,153,0.7)); }
+            50%       { filter: drop-shadow(0 0 7px rgba(52,211,153,1.0)); }
+        }
+        @keyframes spin-slow {
+            from { transform: rotate(0deg); }
+            to   { transform: rotate(360deg); }
+        }
+        .p2p-pulse-connected { animation: pulse-green 2s ease-in-out infinite; }
+        .p2p-spin { animation: spin-slow 1.2s linear infinite; transform-origin: center; }
+        /* P2P status pill */
+        #p2p-status-pill {
+            transition: all 0.3s ease;
+        }
+        /* Radar scope toast */
+        #radar-toast {
+            transition: opacity 0.4s ease;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-emerald-400 font-mono select-none overflow-hidden flex flex-col" style="height:100dvh; position:fixed; width:100%; touch-action:pan-x pan-y">
+
+    <!-- ══════════════════════════════════════════════
+         ROLE SELECTION OVERLAY — shown before app loads
+         ══════════════════════════════════════════════ -->
+    <div id="role-overlay" class="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-6 px-6">
+        <!-- Logo / Title -->
+        <div class="text-center mb-2">
+            <div class="flex items-center justify-center gap-2 mb-1">
+                <i data-lucide="radar" class="w-7 h-7 text-emerald-400 animate-pulse"></i>
+                <h1 class="text-xl font-black tracking-widest text-emerald-100">QGH SIMULATOR</h1>
+            </div>
+            <p class="text-[10px] text-emerald-700 tracking-widest font-semibold uppercase">Select Operating Mode</p>
+        </div>
+
+        <!-- Role Cards -->
+        <div class="w-full max-w-xs flex flex-col gap-3">
+            <!-- STANDALONE (no P2P) -->
+            <button onclick="selectRole('standalone')"
+                class="role-card w-full bg-slate-900 border border-slate-700/60 rounded-2xl p-4 text-left
+                       flex items-center gap-4 hover:border-emerald-700/50 hover:bg-slate-800/80">
+                <div class="w-10 h-10 rounded-xl bg-slate-800 border border-slate-600/50 flex items-center justify-center flex-shrink-0">
+                    <i data-lucide="monitor" class="w-5 h-5 text-slate-400"></i>
+                </div>
+                <div>
+                    <p class="text-sm font-black text-slate-200 tracking-wide">STANDALONE</p>
+                    <p class="text-[9px] text-slate-500 mt-0.5">Solo practice — no device link</p>
+                </div>
+            </button>
+
+            <!-- INSTRUCTOR -->
+            <button onclick="selectRole('instructor')"
+                class="role-card w-full bg-emerald-950/40 border border-emerald-800/60 rounded-2xl p-4 text-left
+                       flex items-center gap-4 hover:border-emerald-500/70 hover:bg-emerald-900/30">
+                <div class="w-10 h-10 rounded-xl bg-emerald-900/50 border border-emerald-700/50 flex items-center justify-center flex-shrink-0">
+                    <i data-lucide="graduation-cap" class="w-5 h-5 text-emerald-300"></i>
+                </div>
+                <div>
+                    <p class="text-sm font-black text-emerald-200 tracking-wide">INSTRUCTOR</p>
+                    <p class="text-[9px] text-emerald-700 mt-0.5">Host session · share ID with trainee</p>
+                </div>
+            </button>
+
+            <!-- TRAINEE -->
+            <button onclick="selectRole('trainee')"
+                class="role-card w-full bg-sky-950/40 border border-sky-800/60 rounded-2xl p-4 text-left
+                       flex items-center gap-4 hover:border-sky-500/70 hover:bg-sky-900/30">
+                <div class="w-10 h-10 rounded-xl bg-sky-900/50 border border-sky-700/50 flex items-center justify-center flex-shrink-0">
+                    <i data-lucide="user" class="w-5 h-5 text-sky-300"></i>
+                </div>
+                <div>
+                    <p class="text-sm font-black text-sky-200 tracking-wide">TRAINEE</p>
+                    <p class="text-[9px] text-sky-700 mt-0.5">Join session · enter instructor's ID</p>
+                </div>
+            </button>
+        </div>
+
+        <!-- Version tag -->
+        <p class="text-[8px] text-emerald-900 tracking-widest mt-2">QGH v1.1</p>
+    </div>
+
+    <!-- ══════════════════════════════════════════════
+         INSTRUCTOR SETUP PANEL — shown after selecting instructor role
+         ══════════════════════════════════════════════ -->
+    <div id="instructor-setup" class="hidden fixed inset-0 z-[100] flex flex-col items-center justify-center gap-5 px-6"
+         style="background: radial-gradient(ellipse at center, #0d1f17 0%, #020a06 100%)">
+        <div class="text-center">
+            <i data-lucide="graduation-cap" class="w-8 h-8 text-emerald-400 mx-auto mb-2"></i>
+            <h2 class="text-base font-black tracking-widest text-emerald-100">INSTRUCTOR MODE</h2>
+            <p class="text-[9px] text-emerald-700 mt-1">Share the code below with your trainee</p>
+        </div>
+        <div class="w-full max-w-xs bg-slate-900 border border-emerald-800/60 rounded-2xl p-5 text-center space-y-4">
+            <div>
+                <p class="text-[8px] text-emerald-600 tracking-widest mb-2 font-bold">YOUR NAME</p>
+                <input type="text" id="instructor-name-input" maxlength="20" placeholder="Instructor name"
+                    class="w-full p-3 bg-black border border-emerald-800/60 rounded-xl text-center text-base font-black
+                           uppercase tracking-[0.15em] text-emerald-300 focus:outline-none focus:border-emerald-500
+                           placeholder:text-emerald-900">
+            </div>
+            <div>
+                <p class="text-[8px] text-emerald-600 tracking-widest mb-2 font-bold">YOUR SESSION ID</p>
+                <div id="instructor-my-id" class="text-4xl font-black tracking-[0.3em] text-emerald-300 mb-3">---</div>
+            </div>
+            <div id="instructor-waiting" class="flex items-center justify-center gap-2 text-[9px] text-emerald-700">
+                <div class="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse"></div>
+                Waiting for trainee to connect…
+            </div>
+            <div id="instructor-connected" class="hidden items-center justify-center gap-2 text-[9px] text-emerald-400">
+                <div class="w-1.5 h-1.5 bg-emerald-400 rounded-full"></div>
+                Trainee connected!
+            </div>
+        </div>
+        <button onclick="launchApp()" id="btn-instructor-launch"
+            class="w-full max-w-xs py-3 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black text-sm rounded-xl tracking-wider transition-colors">
+            LAUNCH SIMULATOR →
+        </button>
+        <button onclick="goBackToRoleSelect()" class="text-[9px] text-slate-600 hover:text-slate-400 tracking-widest">← BACK</button>
+    </div>
+
+    <!-- ══════════════════════════════════════════════
+         TRAINEE SETUP PANEL — enter instructor ID
+         ══════════════════════════════════════════════ -->
+    <div id="trainee-setup" class="hidden fixed inset-0 z-[100] flex flex-col items-center justify-center gap-5 px-6"
+         style="background: radial-gradient(ellipse at center, #0a1520 0%, #020609 100%)">
+        <div class="text-center">
+            <i data-lucide="user" class="w-8 h-8 text-sky-400 mx-auto mb-2"></i>
+            <h2 class="text-base font-black tracking-widest text-sky-100">TRAINEE MODE</h2>
+            <p class="text-[9px] text-sky-700 mt-1">Enter your name and the instructor ID</p>
+        </div>
+        <div class="w-full max-w-xs bg-slate-900 border border-sky-800/60 rounded-2xl p-5 space-y-3">
+            <div>
+                <p class="text-[8px] text-sky-600 tracking-widest mb-2 font-bold text-center">YOUR NAME</p>
+                <input type="text" id="trainee-name-input" maxlength="20" placeholder="Your name"
+                    class="w-full p-3 bg-black border border-sky-800/60 rounded-xl text-center text-base font-black
+                           uppercase tracking-[0.15em] text-sky-300 focus:outline-none focus:border-sky-500
+                           placeholder:text-sky-900">
+            </div>
+            <div>
+                <p class="text-[8px] text-sky-600 tracking-widest mb-2 font-bold text-center">INSTRUCTOR SESSION ID</p>
+                <input type="text" id="trainee-id-input" maxlength="3" placeholder="---"
+                    class="w-full p-3 bg-black border border-sky-800/60 rounded-xl text-center text-3xl font-black
+                           uppercase tracking-[0.3em] text-sky-300 focus:outline-none focus:border-sky-500
+                           placeholder:text-sky-900">
+            </div>
+            <p id="trainee-error" class="hidden text-[9px] text-red-400 text-center mt-2 font-semibold"></p>
+        </div>
+        <button onclick="traineeConnect()"
+            class="w-full max-w-xs py-3 bg-sky-600 hover:bg-sky-500 text-slate-950 font-black text-sm rounded-xl tracking-wider transition-colors">
+            CONNECT TO INSTRUCTOR →
+        </button>
+        <div id="trainee-connecting" class="hidden items-center gap-2 text-[9px] text-sky-600">
+            <div class="w-1.5 h-1.5 bg-sky-500 rounded-full animate-pulse"></div>
+            Connecting…
+        </div>
+        <button onclick="goBackToRoleSelect()" class="text-[9px] text-slate-600 hover:text-slate-400 tracking-widest">← BACK</button>
+    </div>
+
+    <!-- Header -->
+    <header class="border-b border-emerald-900/40 bg-slate-900/80 px-3 py-1.5 backdrop-blur-md flex-shrink-0">
+        <div class="flex justify-between items-center min-h-8">
+            <h1 class="text-sm font-black tracking-widest text-emerald-100 flex items-center gap-1.5">
+                <i data-lucide="radar" class="w-4 h-4 text-emerald-400 animate-pulse"></i>
+                QGH SIMULATOR
+                <!-- Role badge — shown when role is set -->
+                <span id="role-badge" class="hidden text-[7px] font-black tracking-widest px-1.5 py-0.5 rounded-full border"></span>
+                <span id="user-name-badge" class="hidden text-[7px] font-black tracking-widest uppercase px-1.5 py-0.5 rounded-full border border-emerald-700/50 text-emerald-300"></span>
+            </h1>
+            <div class="flex items-center gap-1.5">
+                <!-- P2P connection icon — shown for instructor/trainee; trainee: clickable reconnect -->
+                <button id="p2p-icon-btn" class="hidden relative w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg border border-slate-700/50 bg-slate-900/80 transition-all"
+                        onclick="p2pIconClicked()" title="Connection status">
+                    <!-- Link icon: connected state -->
+                    <svg id="p2p-link-icon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                    </svg>
+                    <!-- Spinner ring — shown while reconnecting -->
+                    <svg id="p2p-spinner-svg" class="hidden absolute inset-0 w-full h-full" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="16" cy="16" r="11" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round"
+                                stroke-dasharray="30 18" class="p2p-spin"/>
+                    </svg>
+                    <!-- Red X cross — shown when disconnected -->
+                    <svg id="p2p-cross-svg" class="hidden absolute inset-0 w-full h-full" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <line x1="10" y1="10" x2="22" y2="22" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
+                        <line x1="22" y1="10" x2="10" y2="22" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
+                    </svg>
+                </button>
+                <!-- PTT (Push-to-Talk) button — instructor/trainee only. Hold to transmit voice. -->
+                <button id="ptt-btn" class="hidden w-8 h-8 flex-shrink-0 items-center justify-center rounded-lg border border-slate-700/50 bg-slate-900/80 transition-all select-none touch-none"
+                        title="Hold to talk" style="touch-action:none">
+                    <i data-lucide="mic" class="w-4 h-4 text-slate-400"></i>
+                </button>
+                <!-- Legacy pill — kept as hidden; updateP2PStatusPill still references it safely -->
+                <div id="p2p-status-pill" class="hidden items-center gap-1 px-1.5 py-0.5 rounded-full border text-[7px] font-bold tracking-wide">
+                    <div id="p2p-dot" class="w-1 h-1 rounded-full"></div>
+                    <span id="p2p-status-text">--</span>
+                </div>
+                <button id="btn-settings" onclick="openSettings()" class="bg-slate-800 border border-emerald-900/50 px-2 py-1 rounded flex items-center gap-1 text-emerald-300">
+                    <i data-lucide="settings" class="w-3.5 h-3.5"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Spawner Bar — instructor/standalone only -->
+    <section id="spawner-bar" class="px-2 pt-1.5 flex-shrink-0">
+        <div class="bg-slate-900/60 border border-emerald-900/40 rounded-lg px-2 py-1 backdrop-blur-sm flex items-center gap-1.5 overflow-hidden h-9">
+            <!-- Start/Stop — icon only -->
+            <button id="btn-toggle-sim" onclick="toggleSimulation()"
+                class="flex-shrink-0 w-8 h-7 bg-red-600 text-slate-950 rounded flex items-center justify-center transition-all">
+                <i id="sim-btn-icon" data-lucide="play" class="w-3.5 h-3.5"></i>
+            </button>
+            <div id="status-indicator" class="w-1.5 h-1.5 flex-shrink-0 bg-red-500 rounded-full shadow-[0_0_5px_rgba(239,68,68,0.8)]"></div>
+
+            <!-- Inputs row — equal flex, min-w-0 each -->
+            <div class="flex items-center gap-1 flex-1 min-w-0">
+                <div class="flex items-center gap-0.5 bg-slate-950/80 px-1 py-0.5 rounded border border-emerald-950 min-w-0 flex-1">
+                    <span class="text-[8px] text-emerald-600 font-bold flex-shrink-0">Hdg</span>
+                    <input id="init-hdg" type="number" min="0" max="359" value="90"
+                        class="num-input w-full min-w-0 py-0 rounded text-[11px]">
+                </div>
+                <div id="spawner-spd-box" class="flex items-center gap-0.5 bg-slate-950/80 px-1 py-0.5 rounded border border-emerald-950 min-w-0 flex-1">
+                    <span class="text-[8px] text-emerald-600 font-bold flex-shrink-0">Spd</span>
+                    <input id="init-spd" type="number" min="100" max="600" value="300"
+                        class="num-input w-full min-w-0 py-0 rounded text-[11px]">
+                </div>
+                <div id="spawner-alt-box" class="flex items-center gap-0.5 bg-slate-950/80 px-1 py-0.5 rounded border border-emerald-950 min-w-0 flex-1">
+                    <span class="text-[8px] text-emerald-600 font-bold flex-shrink-0">Alt</span>
+                    <input id="init-alt" type="number" min="2000" max="40000" step="1000" value="15000"
+                        class="num-input w-full min-w-0 py-0 rounded text-[11px]">
+                </div>
+                <!-- Range input — instructor only, shown by applyRoleUI() -->
+                <div id="spawner-rng-box" class="hidden items-center gap-0.5 bg-slate-950/80 px-1 py-0.5 rounded border border-emerald-950 min-w-0 flex-1">
+                    <span class="text-[8px] text-emerald-600 font-bold flex-shrink-0">Rng</span>
+                    <input id="init-rng" type="number" min="1" max="30" placeholder="---"
+                        class="num-input w-full min-w-0 py-0 rounded text-[11px]">
+                </div>
+                <!-- Bearing input — instructor only, shown by applyRoleUI() -->
+                <div id="spawner-brg-box" class="hidden items-center gap-0.5 bg-slate-950/80 px-1 py-0.5 rounded border border-emerald-950 min-w-0 flex-1">
+                    <span class="text-[8px] text-emerald-600 font-bold flex-shrink-0">Brg</span>
+                    <input id="init-brg" type="number" min="1" max="360" placeholder="---"
+                        class="num-input w-full min-w-0 py-0 rounded text-[11px]">
+                </div>
+            </div>
+
+            <!-- Create — icon only -->
+            <button id="btn-arm-spawner" onclick="toggleSpawnerArming()"
+                class="flex-shrink-0 w-8 h-7 bg-emerald-600 text-slate-950 rounded flex items-center justify-center transition-all">
+                <i data-lucide="crosshair" class="w-3.5 h-3.5"></i>
+            </button>
+        </div>
+    </section>
+
+    <!-- Trainee Status Bar — replaces spawner bar for trainee role -->
+    <section id="trainee-status-bar" class="hidden px-2 pt-1.5 flex-shrink-0">
+        <div class="bg-slate-900/60 border border-sky-800/40 rounded-lg px-2 py-1 backdrop-blur-sm flex items-center gap-1.5 overflow-hidden h-9">
+            <div id="trainee-ex-dot" class="w-1.5 h-1.5 flex-shrink-0 bg-slate-600 rounded-full shadow-[0_0_5px_rgba(100,116,139,0.5)]"></div>
+            <div class="flex-1 min-w-0 flex items-center gap-2">
+                <p id="trainee-ex-label" class="text-[9px] font-black tracking-widest text-slate-500 uppercase leading-none truncate">AWAITING EXERCISE</p>
+                <div class="flex items-center gap-2">
+                    <div class="w-px h-2.5 bg-sky-900/30"></div>
+                    <p id="trainee-ex-sub" class="text-[8px] text-slate-600 tracking-wide truncate">Connected to instructor · standby</p>
+                </div>
+            </div>
+
+            <!-- Trainee Switch View Button -->
+            <button id="btn-toggle-view" onclick="toggleTraineeView()"
+                class="flex-shrink-0 px-2 py-1 bg-sky-900/60 hover:bg-sky-800 border border-sky-600/50 text-sky-200 text-[10px] font-black tracking-widest rounded transition-all">
+                SHOW RADAR
+            </button>
+        </div>
+    </section>
+
+    <!-- Main Workspace Layout — always flex-col, same on all devices -->
+    <main class="flex-1 min-h-0 flex flex-col gap-1.5 px-2 pb-2 pt-1.5 overflow-hidden">
+
+        <!-- ═══ RADAR SCOPE — flex-[11] always ═══ -->
+        <div id="radar-container" class="relative flex-[11] min-h-0 bg-black border border-slate-700/50 overflow-hidden" style="border-radius:4px; box-shadow: 0 0 16px rgba(255,255,255,0.04)">
+            <canvas id="radarCanvas" class="absolute inset-0 w-full h-full cursor-crosshair"></canvas>
+
+            <!-- Spawn validation toast — top-left of radar scope, auto-dismisses -->
+            <div id="radar-toast" class="hidden absolute top-2 left-2 z-20 max-w-[200px] pointer-events-none
+                 bg-slate-900/95 border border-amber-500/70 rounded-lg px-2.5 py-1.5
+                 text-[9px] text-amber-300 font-semibold tracking-wide leading-snug"
+                 style="box-shadow:0 0 10px rgba(245,158,11,0.20)"></div>
+
+            <!-- Bottom-left: Home + Lock -->
+            <div id="radar-controls-left" class="absolute bottom-2 left-2 flex flex-col items-center gap-1 pointer-events-auto z-10">
+                <button onclick="resetPan()" title="Reset view"
+                    class="w-7 h-7 rounded bg-slate-900/90 border border-slate-600/50 text-slate-400 flex items-center justify-center hover:bg-slate-800 active:scale-95 transition-all">
+                    <i data-lucide="home" class="w-3.5 h-3.5"></i>
+                </button>
+                <button id="btn-nav-lock" onclick="toggleNavLock()" title="Lock pan/zoom"
+                    class="w-7 h-7 rounded bg-slate-900/90 border border-slate-600/50 text-slate-400 flex items-center justify-center hover:bg-slate-800 active:scale-95 transition-all">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+                </button>
+            </div>
+
+            <!-- Bottom-right: Zoom + trainee blip toggle -->
+            <div class="absolute bottom-2 right-2 flex flex-col items-center gap-1 pointer-events-auto z-10">
+                <button id="btn-zoom-in" onclick="adjustZoom(1)"
+                    class="w-7 h-7 rounded bg-slate-900/90 border border-slate-600/50 text-slate-300 flex items-center justify-center hover:bg-slate-800 active:scale-95 transition-all text-sm font-black leading-none">+</button>
+                <button id="btn-zoom-out" onclick="adjustZoom(-1)"
+                    class="w-7 h-7 rounded bg-slate-900/90 border border-slate-600/50 text-slate-300 flex items-center justify-center hover:bg-slate-800 active:scale-95 transition-all text-sm font-black leading-none">−</button>
+            </div>
+        </div>
+
+        <!-- ═══ TRAINEE HOMING DISPLAY — replaces radar scope for trainee ═══ -->
+        <div id="trainee-hom-container" class="hidden flex-[11] min-h-0 flex flex-col items-center justify-center bg-slate-950 border border-slate-800 rounded-xl" style="box-shadow:inset 0 0 40px rgba(16,185,129,0.05)">
+            <span class="text-xs uppercase tracking-[0.3em] text-emerald-600/80 font-bold mb-2">HOMING BEARING</span>
+            <div id="trainee-hom-value" class="text-7xl font-black text-emerald-300 font-mono tracking-wider" style="text-shadow: 0 0 30px rgba(52,211,153,0.5)">---°</div>
+        </div>
+
+        <!-- ═══ CONTROLLER PANEL — flex-[6] always ═══ -->
+        <div class="flex-[6] min-w-0 min-h-0 flex flex-col gap-1 overflow-hidden
+                    bg-gradient-to-b from-slate-900/90 to-slate-950
+                    border border-emerald-900/40 rounded-xl px-2 py-1.5 backdrop-blur-sm">
+
+            <!-- ── Trainee info banner (hidden for instructor/standalone) ── -->
+            <div id="trainee-panel-banner" class="hidden flex-shrink-0 flex items-center gap-2 px-2 py-1.5 rounded-lg bg-sky-950/50 border border-sky-800/40">
+                <i data-lucide="user" class="w-3 h-3 text-sky-500 flex-shrink-0"></i>
+                <span class="text-[8px] text-sky-400 font-semibold tracking-wide">TRAINEE VIEW — Bearing line from instructor shown on radar</span>
+            </div>
+
+            <!-- ── Aircraft tabs + delete icon ── -->
+            <div class="flex-shrink-0 flex items-center gap-0.5">
+                <div class="flex gap-0.5 overflow-x-auto no-scrollbar flex-1" id="target-tabs-container"></div>
+                <!-- Compass toggle — standalone only, shown via applyRoleUI -->
+                <button id="btn-no-compass" onclick="toggleNoCompassIcon()" title="Toggle compass heading display"
+                    class="hidden w-7 h-7 flex-shrink-0 rounded border border-slate-600/50 bg-slate-900/80
+                           text-slate-400 flex items-center justify-center
+                           hover:bg-slate-800 active:scale-95 transition-all">
+                    <i data-lucide="compass" class="w-3.5 h-3.5"></i>
+                </button>
+                <!-- ACFT blip toggle — shown for trainee and standalone via applyRoleUI -->
+                <button id="btn-trainee-blips" onclick="toggleTraineeBlips()" title="Toggle aircraft & track visibility"
+                    class="hidden w-7 h-7 flex-shrink-0 rounded border border-slate-600/50 bg-slate-900/80
+                           text-slate-500 flex items-center justify-center
+                           hover:bg-slate-800 active:scale-95 transition-all">
+                    <i data-lucide="eye-off" class="w-3.5 h-3.5"></i>
+                </button>
+                <div id="target-actions" class="hidden flex-shrink-0">
+                    <button onclick="terminateSelectedTarget()" title="Delete aircraft"
+                        class="w-7 h-7 rounded border border-red-900/50 bg-red-950/30
+                               text-red-400 flex items-center justify-center
+                               hover:bg-red-900/50 hover:text-red-200 active:scale-95
+                               transition-all">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- ── Divider ── -->
+            <div id="panel-divider" class="flex-shrink-0 h-px bg-emerald-900/25"></div>
+
+            <!-- ── Aircraft area wrapper — flex-1, holds no-target-msg and target-info ── -->
+            <div id="aircraft-area-wrapper" class="flex-1 min-h-0 overflow-hidden flex flex-col gap-1">
+
+            <!-- ── No-selection placeholder ── -->
+            <div id="no-target-msg" class="flex-1 flex flex-col items-center justify-center gap-1 text-emerald-800">
+                <i data-lucide="radio-tower" class="w-6 h-6 opacity-20 animate-pulse"></i>
+                <p class="text-[9px] font-semibold tracking-widest">NO LOCK</p>
+            </div>
+
+            <!-- ── Active aircraft info + controls ── -->
+            <div id="target-info" class="hidden flex-1 flex flex-col gap-1 min-h-0 overflow-hidden">
+
+                <!-- 3-equal-rows wrapper: telemetry row1 / telemetry row2 / controls, each flex:1 -->
+                <div class="flex-1 min-h-0 flex flex-col gap-1 overflow-hidden">
+
+                <!-- Row 1: BRG · HOM · RNG -->
+                <div class="min-h-0 grid grid-cols-3 gap-1" style="flex:1;min-height:0">
+
+                    <button id="tile-bearing"
+                        onmousedown="setLineDisplay('bearing',true)" onmouseup="setLineDisplay('bearing',false)" onmouseleave="setLineDisplay('bearing',false)"
+                        ontouchstart="setLineDisplay('bearing',true)" ontouchend="setLineDisplay('bearing',false)"
+                        class="flex flex-col items-center justify-center py-1 rounded-lg border
+                               bg-emerald-950/20 border-emerald-800/40 hover:border-amber-500/60
+                               active:bg-amber-500/10 transition-all select-none cursor-pointer">
+                        <span class="text-[11px] font-bold tracking-widest text-emerald-600 leading-none">BRG</span>
+                        <span id="display-bearing" class="text-[19px] font-black text-emerald-200 leading-none neon-glow mt-0.5">---°</span>
+                    </button>
+
+                    <button id="tile-homing"
+                        onmousedown="setLineDisplay('homing',true)" onmouseup="setLineDisplay('homing',false)" onmouseleave="setLineDisplay('homing',false)"
+                        ontouchstart="setLineDisplay('homing',true)" ontouchend="setLineDisplay('homing',false)"
+                        class="flex flex-col items-center justify-center py-1 rounded-lg border
+                               bg-emerald-950/20 border-emerald-800/40 hover:border-amber-500/60
+                               active:bg-amber-500/10 transition-all select-none cursor-pointer">
+                        <span class="text-[11px] font-bold tracking-widest text-emerald-600 leading-none">HOM</span>
+                        <span id="display-homing" class="text-[19px] font-black text-emerald-200 leading-none neon-glow mt-0.5">---°</span>
+                    </button>
+
+                    <div id="tile-range" class="flex flex-col items-center justify-center py-1 rounded-lg border bg-slate-900/70 border-slate-700/40">
+                        <span class="text-[11px] font-bold tracking-widest text-emerald-600 leading-none">RNG</span>
+                        <span id="display-range" class="text-[19px] font-black text-emerald-200 leading-none mt-0.5">--<span class="text-[11px] font-normal text-emerald-600"> NM</span></span>
+                    </div>
+                </div>
+
+                <!-- Row 2: HDG · SPD · ALT (hidden in standalone) -->
+                <div id="telemetry-row2" class="min-h-0 grid grid-cols-3 gap-1" style="flex:1;min-height:0">
+
+                    <div id="tile-hdg-info" class="flex flex-col items-center justify-center py-1 rounded-lg border bg-slate-900/70 border-slate-700/40">
+                        <span class="text-[11px] font-bold tracking-widest text-emerald-600 leading-none">HDG</span>
+                        <span id="display-heading" class="text-[19px] font-black text-emerald-200 leading-none neon-glow mt-0.5">---°</span>
+                    </div>
+
+                    <div id="tile-spd-info" class="flex flex-col items-center justify-center py-1 rounded-lg border bg-slate-900/70 border-slate-700/40">
+                        <span class="text-[11px] font-bold tracking-widest text-emerald-600 leading-none">SPD</span>
+                        <span id="display-speed" class="text-[19px] font-black text-emerald-200 leading-none neon-glow mt-0.5">---<span class="text-[11px] font-normal text-emerald-600"> kt</span></span>
+                    </div>
+
+                    <div id="tile-alt-info" class="flex flex-col items-center justify-center py-1 rounded-lg border bg-slate-900/70 border-slate-700/40">
+                        <span class="text-[11px] font-bold tracking-widest text-emerald-600 leading-none">ALT</span>
+                        <span id="display-altitude" class="text-[19px] font-black text-emerald-200 leading-none neon-glow mt-0.5">FL---</span>
+                    </div>
+                </div>
+
+                <!-- Row 3: Controls -->
+                <div id="ctrl-columns-grid" class="min-h-0 grid grid-cols-3 gap-1" style="flex:1;min-height:0">
+                    <!-- HDG -->
+                    <div class="flex flex-col gap-0.5 rounded-lg border border-emerald-900/50 bg-slate-900/60 p-1">
+                        <div id="ctrl-hdg-label-row" class="flex-shrink-0 flex items-center justify-between gap-1">
+                            <span class="text-[11px] font-bold tracking-widest text-emerald-600 flex-shrink-0">HDG</span>
+                            <span id="display-hdg-assigned" class="text-[13px] font-black text-amber-400 flex-shrink-0">090°</span>
+                        </div>
+                        <div class="flex flex-1 gap-0.5">
+                            <button id="btn-turn-left" onclick="startContinuousAction('turn','left')"
+                                class="flex-1 rounded bg-slate-800 border border-emerald-900/50 flex items-center justify-center text-emerald-400 hover:bg-emerald-900/40 active:scale-95 transition-all">
+                                <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                            </button>
+                            <button id="btn-turn-stop" onclick="stopContinuousAction('turn')"
+                                class="flex-1 rounded bg-slate-900 border border-red-900/60 flex items-center justify-center text-red-500 hover:bg-red-950/40 active:scale-95 transition-all">
+                                <i data-lucide="square" class="w-3.5 h-3.5"></i>
+                            </button>
+                            <button id="btn-turn-right" onclick="startContinuousAction('turn','right')"
+                                class="flex-1 rounded bg-slate-800 border border-emerald-900/50 flex items-center justify-center text-emerald-400 hover:bg-emerald-900/40 active:scale-95 transition-all">
+                                <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- ALT -->
+                    <div id="ctrl-alt-box" class="flex flex-col gap-0.5 rounded-lg border border-emerald-900/50 bg-slate-900/60 p-1">
+                        <div class="flex-shrink-0 flex items-center justify-between">
+                            <span class="text-[11px] font-bold tracking-widest text-emerald-600">ALT</span>
+                            <span id="display-alt-assigned" class="text-[13px] font-black text-amber-400">FL150</span>
+                        </div>
+                        <div class="flex flex-1 gap-0.5">
+                            <button id="btn-alt-down" onclick="startContinuousAction('altitude','down')"
+                                class="flex-1 rounded bg-slate-800 border border-emerald-900/50 flex items-center justify-center text-emerald-400 hover:bg-emerald-900/40 active:scale-95 transition-all">
+                                <i data-lucide="chevron-down" class="w-4 h-4"></i>
+                            </button>
+                            <button id="btn-alt-stop" onclick="stopContinuousAction('altitude')"
+                                class="flex-1 rounded bg-slate-900 border border-red-900/60 flex items-center justify-center text-red-500 hover:bg-red-950/40 active:scale-95 transition-all">
+                                <i data-lucide="square" class="w-3.5 h-3.5"></i>
+                            </button>
+                            <button id="btn-alt-up" onclick="startContinuousAction('altitude','up')"
+                                class="flex-1 rounded bg-slate-800 border border-emerald-900/50 flex items-center justify-center text-emerald-400 hover:bg-emerald-900/40 active:scale-95 transition-all">
+                                <i data-lucide="chevron-up" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- SPD -->
+                    <div id="ctrl-spd-box" class="flex flex-col gap-0.5 rounded-lg border border-emerald-900/50 bg-slate-900/60 p-1">
+                        <div class="flex-shrink-0 flex items-center justify-between">
+                            <span class="text-[11px] font-bold tracking-widest text-emerald-600">SPD</span>
+                            <span id="display-spd-assigned" class="text-[13px] font-black text-amber-400">300kt</span>
+                        </div>
+                        <div class="flex flex-1 gap-0.5">
+                            <button id="btn-spd-dec" onclick="startContinuousAction('speed','decrease')"
+                                class="flex-1 rounded bg-slate-800 border border-emerald-900/50 flex items-center justify-center text-emerald-400 hover:bg-emerald-900/40 active:scale-95 transition-all">
+                                <i data-lucide="minus" class="w-4 h-4"></i>
+                            </button>
+                            <button id="btn-spd-stop" onclick="stopContinuousAction('speed')"
+                                class="flex-1 rounded bg-slate-900 border border-red-900/60 flex items-center justify-center text-red-500 hover:bg-red-950/40 active:scale-95 transition-all">
+                                <i data-lucide="square" class="w-3.5 h-3.5"></i>
+                            </button>
+                            <button id="btn-spd-inc" onclick="startContinuousAction('speed','increase')"
+                                class="flex-1 rounded bg-slate-800 border border-emerald-900/50 flex items-center justify-center text-emerald-400 hover:bg-emerald-900/40 active:scale-95 transition-all">
+                                <i data-lucide="plus" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                </div><!-- /3-equal-rows wrapper -->
+
+            </div><!-- /target-info -->
+
+            </div><!-- /aircraft-area-wrapper -->
+
+            <!-- ── Trainee Stopwatch — flex-1, fills all space between tabs and bottom ── -->
+            <div id="trainee-stopwatch" class="hidden flex-1 min-h-0 flex flex-col gap-1.5 overflow-hidden">
+
+                <!-- Time display card — flex-1 fills available space -->
+                <div class="w-full flex-1 min-h-0 flex flex-col items-center justify-center gap-0 rounded-2xl bg-slate-950 border border-sky-900/40"
+                     style="box-shadow:inset 0 0 32px rgba(14,165,233,0.06),0 0 22px rgba(14,165,233,0.09)">
+                    <span class="text-[10px] font-black tracking-[0.35em] text-sky-800 uppercase mb-1">STOPWATCH</span>
+                    <!-- Main time readout + sec counter — row, centred -->
+                    <div class="flex items-baseline justify-center gap-2">
+                        <span id="sw-display"
+                              class="font-black tabular-nums leading-none select-none"
+                              style="font-size:clamp(2.8rem,11vw,4.2rem);
+                                     color:#ffffff;
+                                     text-shadow:0 0 30px rgba(255,255,255,0.30),0 0 8px rgba(255,255,255,0.15)">00:00</span>
+                        <span id="sw-sec-label"
+                              class="font-black tabular-nums select-none leading-none"
+                              style="font-size:clamp(1.1rem,4.5vw,1.6rem);
+                                     color:#34d399;
+                                     text-shadow:0 0 14px rgba(52,211,153,0.55)">0s</span>
+                    </div>
+                </div>
+
+                <!-- Control buttons — flex-shrink-0, fixed height row -->
+                <div class="w-full grid grid-cols-3 gap-1.5 flex-shrink-0">
+
+                    <!-- START / RESUME -->
+                    <button id="sw-btn-start" onclick="swStart()"
+                        class="flex flex-col items-center justify-center gap-1 py-2 rounded-xl
+                               border border-emerald-700/60 bg-emerald-950/60 text-emerald-400
+                               active:scale-95 transition-all">
+                        <i data-lucide="play" class="w-7 h-7"></i>
+                        <span class="text-[10px] font-black tracking-widest">START</span>
+                    </button>
+
+                    <!-- STOP -->
+                    <button id="sw-btn-stop" onclick="swStop()"
+                        class="flex flex-col items-center justify-center gap-1 py-2 rounded-xl
+                               border border-red-700/50 bg-red-950/40 text-red-400
+                               active:scale-95 transition-all">
+                        <i data-lucide="square" class="w-7 h-7"></i>
+                        <span class="text-[10px] font-black tracking-widest">STOP</span>
+                    </button>
+
+                    <!-- RESET — always active -->
+                    <button id="sw-btn-reset" onclick="swReset()"
+                        class="flex flex-col items-center justify-center gap-1 py-2 rounded-xl
+                               border border-slate-600/50 bg-slate-900 text-slate-400
+                               active:scale-95 transition-all">
+                        <i data-lucide="rotate-ccw" class="w-7 h-7"></i>
+                        <span class="text-[10px] font-black tracking-widest">RESET</span>
+                    </button>
+
+                </div>
+            </div><!-- /trainee-stopwatch -->
+
+            <!-- ── Standalone Stopwatch — single-line strip, minimal height ── -->
+            <div id="standalone-stopwatch" class="hidden flex-shrink-0 flex items-center gap-1.5 px-2 rounded-xl bg-slate-950 border border-emerald-900/40" style="height:40px;box-shadow:inset 0 0 14px rgba(16,185,129,0.04)">
+                <!-- Label -->
+                <span class="text-[9px] font-black tracking-[0.2em] text-emerald-700 uppercase select-none flex-shrink-0">STOPWATCH</span>
+                <!-- Clock -->
+                <div class="flex items-baseline gap-1.5 flex-1 justify-center">
+                    <span id="sw-sa-display"
+                          class="font-black tabular-nums select-none leading-none"
+                          style="font-size:1.6rem;color:#ffffff;text-shadow:0 0 14px rgba(255,255,255,0.30)">00:00</span>
+                    <span id="sw-sa-sec-label"
+                          class="font-black tabular-nums select-none leading-none"
+                          style="font-size:1rem;color:#34d399;text-shadow:0 0 8px rgba(52,211,153,0.55)">0s</span>
+                </div>
+                <!-- 3 compact icon buttons -->
+                <button id="sw-sa-btn-start" onclick="swStart()"
+                    class="flex-shrink-0 flex items-center justify-center px-2.5 h-7 rounded-lg
+                           border border-emerald-700/60 bg-emerald-950/60 text-emerald-400
+                           active:scale-95 transition-all">
+                    <i data-lucide="play" class="w-4 h-4"></i>
+                </button>
+                <button id="sw-sa-btn-stop" onclick="swStop()"
+                    class="flex-shrink-0 flex items-center justify-center px-2.5 h-7 rounded-lg
+                           border border-red-700/50 bg-red-950/40 text-red-400
+                           active:scale-95 transition-all">
+                    <i data-lucide="square" class="w-4 h-4"></i>
+                </button>
+                <button id="sw-sa-btn-reset" onclick="swReset()"
+                    class="flex-shrink-0 flex items-center justify-center px-2.5 h-7 rounded-lg
+                           border border-slate-600/50 bg-slate-900 text-slate-400
+                           active:scale-95 transition-all">
+                    <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                </button>
+            </div><!-- /standalone-stopwatch -->
+
+        </div><!-- /controller panel -->
+    </main>
+
+    <!-- Settings Dialog Modal -->
+    <div id="settings-modal" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-emerald-900/50 rounded-xl w-full max-w-sm overflow-hidden shadow-2xl transition-all">
+            <!-- Modal Header -->
+            <div class="bg-slate-950 p-4 border-b border-emerald-900/30 flex justify-between items-center">
+                <h3 class="font-bold text-sm tracking-widest text-emerald-100 flex items-center gap-2">
+                    <i data-lucide="sliders" class="w-4 h-4 text-emerald-400"></i> RADAR SCOPE SETTINGS
+                </h3>
+                <button onclick="closeSettings()" class="text-emerald-600 hover:text-emerald-400 transition-colors">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <!-- Modal Body -->
+            <div class="p-5 space-y-4">
+                <p class="text-[10px] text-emerald-600 leading-normal">Customize overlay layers rendered on the active air traffic control display screen.</p>
+                
+                <div class="space-y-3">
+                    <!-- Radar Sweep Toggle -->
+                    <label class="flex items-center justify-between p-2.5 bg-slate-950/40 rounded border border-emerald-950 cursor-pointer">
+                        <span class="text-xs text-emerald-300 font-semibold">Show Radar Sweep Beam</span>
+                        <input id="set-sweep" type="checkbox" checked onchange="updateSetting('showSweep', this.checked)" class="w-4 h-4 accent-emerald-500">
+                    </label>
+
+                    <!-- Distance Rings Toggle -->
+                    <label class="flex items-center justify-between p-2.5 bg-slate-950/40 rounded border border-emerald-950 cursor-pointer">
+                        <span class="text-xs text-emerald-300 font-semibold">Show Distance Rings</span>
+                        <input id="set-rings" type="checkbox" checked onchange="updateSetting('showRings', this.checked)" class="w-4 h-4 accent-emerald-500">
+                    </label>
+
+                    <!-- Distance Labels Toggle -->
+                    <label class="flex items-center justify-between p-2.5 bg-slate-950/40 rounded border border-emerald-950 cursor-pointer">
+                        <span class="text-xs text-emerald-300 font-semibold">Show Range Ring Labels</span>
+                        <input id="set-dist-labels" type="checkbox" checked onchange="updateSetting('showDistanceLabels', this.checked)" class="w-4 h-4 accent-emerald-500">
+                    </label>
+
+                    <!-- Angle Gridlines Toggle -->
+                    <label class="flex items-center justify-between p-2.5 bg-slate-950/40 rounded border border-emerald-950 cursor-pointer">
+                        <span class="text-xs text-emerald-300 font-semibold">Show Radial Angle Markers</span>
+                        <input id="set-angles" type="checkbox" checked onchange="updateSetting('showAngleMarkers', this.checked)" class="w-4 h-4 accent-emerald-500">
+                    </label>
+                </div>
+
+                <!-- Track Lines -->
+                <div class="pt-1">
+                    <p class="text-[9px] text-emerald-700 font-bold tracking-widest uppercase mb-2">Track Lines (drawn 15 NM from centre)</p>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div class="flex flex-col gap-1">
+                            <label class="text-[9px] text-emerald-500 font-bold tracking-widest uppercase">Outbound Track</label>
+                            <div class="flex items-center gap-1.5 p-2 bg-slate-950/60 rounded border border-emerald-900/60">
+                                <input id="set-outbound-track" type="number" min="1" max="360" value="140"
+                                    oninput="updateTrackSetting('outboundTrack', this.value)"
+                                    class="num-input w-full rounded text-sm py-0.5">
+                                <span class="text-[9px] text-emerald-700 font-bold flex-shrink-0">°</span>
+                            </div>
+                        </div>
+                        <div class="flex flex-col gap-1">
+                            <label class="text-[9px] text-emerald-500 font-bold tracking-widest uppercase">Inbound Track</label>
+                            <div class="flex items-center gap-1.5 p-2 bg-slate-950/60 rounded border border-emerald-900/60">
+                                <input id="set-inbound-track" type="number" min="1" max="360" value="300"
+                                    oninput="updateTrackSetting('inboundTrack', this.value)"
+                                    class="num-input w-full rounded text-sm py-0.5">
+                                <span class="text-[9px] text-emerald-700 font-bold flex-shrink-0">°</span>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="text-[8px] text-emerald-900 mt-1.5 leading-snug">Outbound line drawn on entered bearing · Inbound line drawn on 180° reciprocal</p>
+                </div>
+            </div>
+            <!-- Modal Footer -->
+            <div class="bg-slate-950 p-4 border-t border-emerald-900/20 flex justify-end">
+                <button onclick="closeSettings()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black text-xs rounded tracking-wider transition-colors">
+                    CLOSE
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════
+         P2P ROLE & CONNECTION MANAGEMENT
+         ══════════════════════════════════════ -->
+    <script>
+        // ── Role state ──────────────────────────────────────────────
+        let appRole = null;
+
+        // ── Trainee View Mode State ('homing' | 'radar') ────────────
+        let traineeViewMode = 'homing';
+
+        // ── PeerJS state ─────────────────────────────────────────────
+        let peer = null;
+        let p2pConn = null;
+        let heartbeatInterval = null;
+        let timeoutCheckInterval = null;
+        let p2pStatusInterval = null;
+        let lastPingTime = Date.now();
+
+        // ── Trainee auto-reconnect state ──────────────────────────────
+        let reconnectTimeout = null;
+        let reconnectAttempt = 0;
+        const RECONNECT_MAX_ATTEMPTS = 4;
+        const RECONNECT_DELAY_MS     = 4000;
+
+        // ── Trainee-side received line state ─────────────────────────
+        let traineeLineState = {
+            active: null,
+            bearing: null
+        };
+
+        // ── Trainee blip visibility ───────────────────────────────────
+        let showBlips = false;
+        let noCompassMode = false;
+
+        let instructorName = '';
+        let traineeName = '';
+        let traineeTargetInstructorId = '';
+
+        // ── Voice (Push-to-Talk) state ─────────────────────────────────
+        let localAudioStream = null;
+        let voiceCall = null;
+        let remoteAudioEl = null;
+        let pttActive = false;
+        let micPermissionDenied = false;
+        let pttWired = false;
+
+        function generateShortId() {
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            let id = '';
+            for (let i = 0; i < 3; i++) id += chars[Math.floor(Math.random() * chars.length)];
+            return id;
+        }
+
+        function selectRole(role) {
+            if (role === 'standalone') {
+                appRole = 'standalone';
+                hideAllOverlays();
+                applyRoleBadge();
+                launchApp();
+                return;
+            }
+
+            if (role === 'instructor') {
+                appRole = 'instructor';
+                hideAllOverlays();
+                document.getElementById('instructor-setup').classList.remove('hidden');
+                initPeer('instructor');
+                return;
+            }
+
+            if (role === 'trainee') {
+                appRole = 'trainee';
+                hideAllOverlays();
+                document.getElementById('trainee-setup').classList.remove('hidden');
+                initPeer('trainee');
+                return;
+            }
+        }
+
+        function goBackToRoleSelect() {
+            if (peer) { try { peer.destroy(); } catch(e){} peer = null; }
+            p2pConn = null;
+            appRole = null;
+            hideAllOverlays();
+            document.getElementById('role-overlay').classList.remove('hidden');
+        }
+
+        function hideAllOverlays() {
+            ['role-overlay','instructor-setup','trainee-setup'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+        }
+
+        function initPeer(role) {
+            const myId = generateShortId();
+            peer = new Peer(myId);
+
+            peer.on('open', (id) => {
+                if (role === 'instructor') {
+                    document.getElementById('instructor-my-id').textContent = id;
+                }
+            });
+
+            peer.on('error', (err) => {
+                console.warn('PeerJS error:', err);
+                if (role === 'trainee') {
+                    const errEl = document.getElementById('trainee-error');
+                    errEl.textContent = 'Connection failed — check the ID and try again.';
+                    errEl.classList.remove('hidden');
+                    document.getElementById('trainee-connecting').classList.add('hidden');
+                }
+            });
+
+            if (role === 'instructor') {
+                peer.on('connection', (conn) => {
+                    p2pConn = conn;
+                    setupP2PListeners('instructor');
+                });
+            }
+
+            peer.on('call', async (call) => {
+                await ensureLocalAudioStream();
+                try { call.answer(localAudioStream || undefined); } catch (e) { console.warn('Answer call failed', e); }
+                voiceCall = call;
+                call.on('stream', (remoteStream) => attachRemoteAudio(remoteStream));
+                call.on('close', () => { if (voiceCall === call) voiceCall = null; updatePTTButtonUI(); });
+                call.on('error', (e) => console.warn('Voice call error', e));
+            });
+        }
+
+        function traineeConnect() {
+            const targetId = document.getElementById('trainee-id-input').value.trim().toUpperCase();
+            const traineeNameInput = document.getElementById('trainee-name-input').value.trim();
+            const errEl = document.getElementById('trainee-error');
+            errEl.classList.add('hidden');
+
+            if (!traineeNameInput) {
+                errEl.textContent = 'Please enter your name.';
+                errEl.classList.remove('hidden');
+                return;
+            }
+
+            if (!targetId || targetId.length < 2) {
+                errEl.textContent = 'Please enter a valid 3-character ID.';
+                errEl.classList.remove('hidden');
+                return;
+            }
+
+            traineeName = traineeNameInput;
+            traineeTargetInstructorId = targetId;
+
+            document.getElementById('trainee-connecting').classList.remove('hidden');
+
+            if (!peer) initPeer('trainee');
+
+            const doConnect = () => {
+                if (p2pConn && p2pConn.open) {
+                    try { p2pConn.close(); } catch (e) { }
+                }
+                p2pConn = peer.connect(targetId);
+                setupP2PListeners('trainee');
+            };
+
+            if (peer.id) {
+                doConnect();
+            } else {
+                peer.on('open', doConnect);
+            }
+        }
+
+        function setupP2PListeners(role) {
+            if (!p2pConn) return;
+
+            p2pConn.on('open', () => {
+                if (role === 'instructor') {
+                    document.getElementById('instructor-waiting').classList.add('hidden');
+                    document.getElementById('instructor-connected').classList.remove('hidden');
+                    document.getElementById('instructor-connected').classList.add('flex');
+                } else {
+                    reconnectAttempt = 0;
+                    if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null; }
+                    showTraineeReconnectBanner(false);
+                    if (typeof lastSimRunningState === 'boolean') {
+                        updateTraineeExerciseStatus(lastSimRunningState);
+                    }
+                    if (!document.getElementById('trainee-stopwatch') ||
+                        document.getElementById('trainee-stopwatch').classList.contains('hidden')) {
+                        hideAllOverlays();
+                        applyRoleBadge();
+                        launchApp();
+                    }
+                }
+
+                lastPingTime = Date.now();
+                startHeartbeat(role);
+                sendUserInfo();
+                updateUserNameDisplay();
+
+                if (role === 'trainee') startVoiceCall(traineeTargetInstructorId);
+                updatePTTButtonUI();
+
+                p2pConn.on('data', (data) => {
+                    handleP2PData(data, role);
+                });
+            });
+
+            p2pConn.on('close', () => handleP2PDisconnect(role));
+            p2pConn.on('error', () => handleP2PDisconnect(role));
+        }
+
+        function handleP2PData(data, role) {
+            if (data === 'ping') {
+                lastPingTime = Date.now();
+                if (p2pConn && p2pConn.open) p2pConn.send('pong');
+                return;
+            }
+            if (data === 'pong') {
+                lastPingTime = Date.now();
+                return;
+            }
+
+            if (typeof data === 'object' && data.type === 'lineDisplay') {
+                if (role === 'trainee') {
+                    traineeLineState.active = data.activeLineDisplay;
+                    traineeLineState.bearing = data.bearing;
+
+                    // Update the large HOMING BEARING screen when transmitted
+                    const homEl = document.getElementById('trainee-hom-value');
+                    if (homEl) {
+                        if (data.activeLineDisplay === 'homing' && data.bearing !== null && data.bearing !== undefined) {
+                            const homDeg = (data.bearing + 180) % 360;
+                            homEl.textContent = String(homDeg).padStart(3, '0') + '°';
+                        } else if (!data.activeLineDisplay) {
+                            homEl.textContent = '---°';
+                        }
+                    }
+                }
+            }
+
+            if (typeof data === 'object' && data.type === 'trackSettings') {
+                if (role === 'trainee') {
+                    if (data.outboundTrack) settings.outboundTrack = data.outboundTrack;
+                    if (data.inboundTrack)  settings.inboundTrack  = data.inboundTrack;
+                }
+            }
+
+            if (typeof data === 'object' && data.type === 'userInfo') {
+                if (role === 'trainee') {
+                    instructorName = data.instructorName || instructorName;
+                }
+                if (role === 'instructor') {
+                    traineeName = data.traineeName || traineeName;
+                }
+                updateUserNameDisplay();
+            }
+
+            if (typeof data === 'object' && data.type === 'spawn') {
+                if (role === 'trainee') {
+                    try {
+                        const ac = data.aircraft;
+                        ac.history = ac.history || [];
+                        ac.continuousAction = ac.continuousAction || { turn: null, altitude: null, speed: null };
+                        aircrafts.push(ac);
+                        if (data.selectedId) {
+                            selectedAircraft = aircrafts.find(a => a.id === data.selectedId) || selectedAircraft;
+                        }
+                        renderAircraftTabs();
+                    } catch (e) { console.warn('Error applying spawn from instructor', e); }
+                }
+            }
+
+            if (typeof data === 'object' && data.type === 'stateSnapshot') {
+                if (role === 'trainee') {
+                    try {
+                        aircrafts = (data.aircrafts || []).map(a => ({
+                            id: a.id, x_nm: a.x_nm, y_nm: a.y_nm, heading: a.heading, assignedHeading: a.assignedHeading,
+                            speed: a.speed, assignedSpeed: a.assignedSpeed, altitude: a.altitude, assignedAltitude: a.assignedAltitude,
+                            history: a.history || [], continuousAction: { turn: null, altitude: null, speed: null }, tickCount: a.tickCount || 0
+                        }));
+                        selectedAircraft = data.selectedId
+                            ? (aircrafts.find(a => a.id === data.selectedId) || null)
+                            : null;
+                        renderAircraftTabs();
+                    } catch (e) { console.warn('Error applying stateSnapshot from instructor', e); }
+                }
+            }
+
+            if (typeof data === 'object' && data.type === 'simState') {
+                if (role === 'trainee') {
+                    updateTraineeExerciseStatus(data.running);
+                }
+            }
+        }
+
+        function startHeartbeat(role) {
+            stopHeartbeat();
+            heartbeatInterval = setInterval(() => {
+                if (p2pConn && p2pConn.open) {
+                    p2pConn.send('ping');
+                }
+            }, 10000);
+
+            timeoutCheckInterval = setInterval(() => {
+                if (p2pConn && p2pConn.open && (Date.now() - lastPingTime > 30000)) {
+                    handleP2PDisconnect(role);
+                }
+            }, 2000);
+        }
+
+        function stopHeartbeat() {
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
+            if (timeoutCheckInterval) clearInterval(timeoutCheckInterval);
+            heartbeatInterval = null;
+            timeoutCheckInterval = null;
+        }
+
+        let lastSimRunningState = null;
+
+        function updateTraineeExerciseStatus(running) {
+            const dot   = document.getElementById('trainee-ex-dot');
+            const label = document.getElementById('trainee-ex-label');
+            const sub   = document.getElementById('trainee-ex-sub');
+            if (!dot || !label || !sub) return;
+
+            if (running === 'disconnected') {
+                dot.className   = 'w-1.5 h-1.5 flex-shrink-0 rounded-full bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.7)] animate-pulse';
+                label.className = 'text-[9px] font-black tracking-widest text-red-400 uppercase leading-none';
+                label.textContent = 'EXERCISE DISCONNECTED';
+                sub.className   = 'text-[8px] text-red-800 tracking-wide mt-0.5';
+                sub.textContent = 'Waiting for reconnection…';
+            } else if (running) {
+                lastSimRunningState = true;
+                dot.className   = 'w-1.5 h-1.5 flex-shrink-0 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)] animate-pulse';
+                label.className = 'text-[9px] font-black tracking-widest text-emerald-300 uppercase leading-none';
+                label.textContent = 'EXERCISE IN PROGRESS';
+                sub.className   = 'text-[8px] text-emerald-700 tracking-wide mt-0.5';
+                sub.textContent = 'Instructor simulation running';
+            } else {
+                lastSimRunningState = false;
+                dot.className   = 'w-1.5 h-1.5 flex-shrink-0 rounded-full bg-amber-400 shadow-[0_0_5px_rgba(251,191,36,0.7)]';
+                label.className = 'text-[9px] font-black tracking-widest text-amber-400 uppercase leading-none';
+                label.textContent = 'EXERCISE PAUSED';
+                sub.className   = 'text-[8px] text-amber-800 tracking-wide mt-0.5';
+                sub.textContent = 'Instructor has stopped the simulation';
+            }
+        }
+
+        function handleP2PDisconnect(role) {
+            stopHeartbeat();
+            if (p2pConn) { try { p2pConn.close(); } catch(e){} }
+            p2pConn = null;
+            lastPingTime = Date.now();
+            if (voiceCall) { try { voiceCall.close(); } catch(e){} voiceCall = null; }
+            pttActive = false;
+            if (localAudioStream) localAudioStream.getAudioTracks().forEach(t => t.enabled = false);
+            updatePTTButtonUI();
+            updateP2PStatusPill('disconnected');
+            if (role === 'trainee') {
+                updateTraineeExerciseStatus('disconnected');
+                showTraineeReconnectBanner(true);
+                scheduleTraineeReconnect();
+            }
+        }
+
+        function showTraineeReconnectBanner(show) {
+            if (!show) updateP2PStatusPill('connected');
+        }
+
+        function setReconnectStatus(text) {}
+
+        function scheduleTraineeReconnect() {
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            if (!traineeTargetInstructorId) return;
+
+            reconnectAttempt++;
+            if (reconnectAttempt > RECONNECT_MAX_ATTEMPTS) {
+                updateP2PStatusPill('disconnected');
+                return;
+            }
+
+            updateP2PStatusPill('waiting');
+
+            reconnectTimeout = setTimeout(() => {
+                if (p2pConn && p2pConn.open) return;
+                doTraineeReconnect();
+            }, RECONNECT_DELAY_MS);
+        }
+
+        function doTraineeReconnect() {
+            if (!traineeTargetInstructorId) return;
+            if (!peer || peer.destroyed) {
+                initPeer('trainee');
+                peer.on('open', () => { doTraineeConnect(); });
+                return;
+            }
+            doTraineeConnect();
+        }
+
+        function doTraineeConnect() {
+            if (p2pConn) { try { p2pConn.close(); } catch(e){} p2pConn = null; }
+            p2pConn = peer.connect(traineeTargetInstructorId);
+            setupP2PListeners('trainee');
+
+            const watchdog = setTimeout(() => {
+                if (!p2pConn || !p2pConn.open) {
+                    scheduleTraineeReconnect();
+                }
+            }, 8000);
+
+            p2pConn.on('open', () => clearTimeout(watchdog));
+        }
+
+        function traineeManualReconnect() {
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            reconnectAttempt = 0;
+            updateP2PStatusPill('waiting');
+            doTraineeReconnect();
+        }
+
+        function launchApp() {
+            if (appRole === 'instructor') {
+                instructorName = document.getElementById('instructor-name-input').value.trim() || 'Instructor';
+            }
+
+            hideAllOverlays();
+            applyRoleBadge();
+            applyRoleUI();
+            updateUserNameDisplay();
+
+            if (appRole === 'instructor' || appRole === 'trainee') {
+                const iconBtn = document.getElementById('p2p-icon-btn');
+                if (iconBtn) { iconBtn.classList.remove('hidden'); iconBtn.classList.add('flex'); }
+                updateP2PStatusPill(p2pConn && p2pConn.open ? 'connected' : 'waiting');
+
+                const pttBtn = document.getElementById('ptt-btn');
+                if (pttBtn) { pttBtn.classList.remove('hidden'); pttBtn.classList.add('flex'); wirePTTButton(); }
+                ensureLocalAudioStream();
+            }
+
+            sendUserInfo();
+            if (!p2pStatusInterval) p2pStatusInterval = setInterval(refreshP2PStatus, 2000);
+        }
+
+        function refreshP2PStatus() {
+            if (appRole === 'instructor' || appRole === 'trainee') {
+                updateP2PStatusPill(p2pConn && p2pConn.open ? 'connected' : 'disconnected');
+            }
+        }
+
+        function updateP2PStatusPill(state) {
+            const pill = document.getElementById('p2p-status-pill');
+            const dot = document.getElementById('p2p-dot');
+            const txt = document.getElementById('p2p-status-text');
+            if (pill) {
+                pill.classList.remove('border-emerald-700/50','border-amber-700/50','border-red-700/50',
+                                       'bg-emerald-950/50','bg-amber-950/50','bg-red-950/50');
+                if (dot) dot.classList.remove('bg-emerald-400','bg-amber-400','bg-red-500');
+                if (state === 'connected') {
+                    pill.classList.add('border-emerald-700/50','bg-emerald-950/50');
+                    if (dot) dot.classList.add('bg-emerald-400');
+                    if (txt) { txt.innerHTML = '<i data-lucide="link" class="w-2.5 h-2.5"></i>'; txt.className = 'text-emerald-400'; }
+                } else if (state === 'waiting') {
+                    pill.classList.add('border-amber-700/50','bg-amber-950/50');
+                    if (dot) dot.classList.add('bg-amber-400');
+                    if (txt) { txt.innerHTML = '<i data-lucide="loader-2" class="w-2.5 h-2.5 animate-spin"></i>'; txt.className = 'text-amber-400'; }
+                } else {
+                    pill.classList.add('border-red-700/50','bg-red-950/50');
+                    if (dot) dot.classList.add('bg-red-500');
+                    if (txt) { txt.innerHTML = '<i data-lucide="unlink" class="w-2.5 h-2.5"></i>'; txt.className = 'text-red-400'; }
+                }
+            }
+
+            updateP2PIconState(state);
+            updatePTTButtonUI();
+
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+
+        function updateP2PIconState(state) {
+            const btn     = document.getElementById('p2p-icon-btn');
+            const linkIco = document.getElementById('p2p-link-icon');
+            const spinner = document.getElementById('p2p-spinner-svg');
+            const cross   = document.getElementById('p2p-cross-svg');
+            if (!btn) return;
+
+            btn.classList.remove('hidden');
+            btn.classList.add('flex');
+
+            btn.classList.remove('border-emerald-600/60','border-amber-600/60','border-red-700/60',
+                                  'bg-emerald-950/60','bg-amber-950/40','bg-slate-900/80','bg-red-950/40',
+                                  'cursor-default','cursor-pointer');
+            if (spinner) spinner.classList.add('hidden');
+            if (cross)   cross.classList.add('hidden');
+
+            if (state === 'connected') {
+                btn.classList.add('border-emerald-600/60','bg-emerald-950/60','cursor-default');
+                if (linkIco) { linkIco.setAttribute('stroke','#34d399'); }
+                btn.style.filter = 'drop-shadow(0 0 4px rgba(52,211,153,0.6))';
+            } else if (state === 'waiting') {
+                btn.classList.add('border-amber-600/60','bg-amber-950/40','cursor-pointer');
+                if (linkIco) { linkIco.setAttribute('stroke','#94a3b8'); }
+                if (spinner) spinner.classList.remove('hidden');
+                btn.style.filter = 'none';
+            } else {
+                btn.classList.add('border-red-700/60','bg-red-950/40','cursor-pointer');
+                if (linkIco) { linkIco.setAttribute('stroke','#64748b'); }
+                if (cross)   cross.classList.remove('hidden');
+                btn.style.filter = 'none';
+            }
+
+            btn.style.pointerEvents = (appRole === 'trainee' && state !== 'connected') ? 'auto' : 'none';
+        }
+
+        function p2pIconClicked() {
+            if (appRole !== 'trainee') return;
+            if (p2pConn && p2pConn.open) return;
+            traineeManualReconnect();
+        }
+
+        // ── Toggle Trainee View Function ───────────────────────────
+        function toggleTraineeView() {
+            if (appRole !== 'trainee') return;
+
+            const radarBox = document.getElementById('radar-container');
+            const homBox = document.getElementById('trainee-hom-container');
+            const btn = document.getElementById('btn-toggle-view');
+
+            if (traineeViewMode === 'homing') {
+                // Switch to Radar View
+                traineeViewMode = 'radar';
+                if (homBox) { homBox.classList.add('hidden'); homBox.classList.remove('flex'); }
+                if (radarBox) radarBox.classList.remove('hidden');
+
+                // Automatically display aircraft blips and routes in Radar View
+                showBlips = true;
+
+                if (btn) {
+                    btn.textContent = 'SHOW HOMING';
+                    btn.className = "flex-shrink-0 px-2 py-1 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-600/60 text-emerald-300 text-[10px] font-black tracking-widest rounded transition-all";
+                }
+            } else {
+                // Switch back to Homing View
+                traineeViewMode = 'homing';
+                if (radarBox) radarBox.classList.add('hidden');
+                if (homBox) { homBox.classList.remove('hidden'); homBox.classList.add('flex'); }
+
+                if (btn) {
+                    btn.textContent = 'SHOW RADAR';
+                    btn.className = "flex-shrink-0 px-2 py-1 bg-sky-900/60 hover:bg-sky-800 border border-sky-600/50 text-sky-200 text-[10px] font-black tracking-widest rounded transition-all";
+                }
+            }
+        }
+
+        async function ensureLocalAudioStream() {
+            if (localAudioStream) return localAudioStream;
+
+            const isSecure = window.isSecureContext === true;
+            if (!isSecure || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                micPermissionDenied = true;
+                showRadarToast('⚠ Voice needs HTTPS — open this page via a secure link, not a local file');
+                updatePTTButtonUI();
+                return null;
+            }
+
+            try {
+                localAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                localAudioStream.getAudioTracks().forEach(t => t.enabled = false);
+                micPermissionDenied = false;
+            } catch (e) {
+                console.warn('Microphone access denied/unavailable:', e);
+                micPermissionDenied = true;
+                if (e && e.name === 'NotAllowedError') {
+                    showRadarToast('⚠ Microphone permission denied — enable it in browser settings');
+                } else if (e && e.name === 'NotFoundError') {
+                    showRadarToast('⚠ No microphone found on this device');
+                } else {
+                    showRadarToast('⚠ Microphone unavailable — voice disabled');
+                }
+            }
+            updatePTTButtonUI();
+            return localAudioStream;
+        }
+
+        function attachRemoteAudio(remoteStream) {
+            if (!remoteAudioEl) {
+                remoteAudioEl = document.createElement('audio');
+                remoteAudioEl.autoplay = true;
+                remoteAudioEl.setAttribute('playsinline', '');
+                remoteAudioEl.style.display = 'none';
+                document.body.appendChild(remoteAudioEl);
+            }
+            remoteAudioEl.srcObject = remoteStream;
+            remoteAudioEl.play().catch(() => {
+                showRadarToast('Tap anywhere to enable voice audio');
+                const resume = () => { remoteAudioEl.play().catch(() => {}); document.removeEventListener('click', resume); };
+                document.addEventListener('click', resume, { once: true });
+            });
+        }
+
+        async function startVoiceCall(remotePeerId) {
+            if (!remotePeerId || !peer) return;
+            await ensureLocalAudioStream();
+            if (!localAudioStream) return;
+            if (voiceCall) { try { voiceCall.close(); } catch (e) {} voiceCall = null; }
+            try {
+                voiceCall = peer.call(remotePeerId, localAudioStream);
+                voiceCall.on('stream', (remoteStream) => attachRemoteAudio(remoteStream));
+                voiceCall.on('close', () => { voiceCall = null; updatePTTButtonUI(); });
+                voiceCall.on('error', (e) => console.warn('Voice call error', e));
+            } catch (e) { console.warn('Failed to start voice call', e); }
+            updatePTTButtonUI();
+        }
+
+        function wirePTTButton() {
+            const btn = document.getElementById('ptt-btn');
+            if (!btn) return;
+            if (pttWired) { updatePTTButtonUI(); return; }
+            pttWired = true;
+            const start = (e) => { e.preventDefault(); pttSetActive(true); };
+            const end   = (e) => { e.preventDefault(); pttSetActive(false); };
+            btn.addEventListener('pointerdown', start);
+            btn.addEventListener('pointerup', end);
+            btn.addEventListener('pointerleave', end);
+            btn.addEventListener('pointercancel', end);
+            updatePTTButtonUI();
+        }
+
+        function pttSetActive(active) {
+            if (micPermissionDenied) { showRadarToast('⚠ Microphone unavailable — voice disabled'); return; }
+            if (active && !(p2pConn && p2pConn.open)) return;
+            pttActive = active;
+            if (localAudioStream) localAudioStream.getAudioTracks().forEach(t => t.enabled = active);
+            updatePTTButtonUI();
+        }
+
+        function updatePTTButtonUI() {
+            const btn = document.getElementById('ptt-btn');
+            if (!btn) return;
+            const icon = btn.querySelector('i');
+            btn.classList.remove('border-red-500/70', 'bg-red-950/60', 'border-slate-700/50', 'bg-slate-900/80', 'opacity-40');
+            const connected = !!(p2pConn && p2pConn.open);
+            if (pttActive) {
+                btn.classList.add('border-red-500/70', 'bg-red-950/60');
+                if (icon) { icon.setAttribute('data-lucide', 'mic'); icon.className = 'w-4 h-4 text-red-400'; }
+            } else if (micPermissionDenied || !connected) {
+                btn.classList.add('border-slate-700/50', 'bg-slate-900/80', 'opacity-40');
+                if (icon) { icon.setAttribute('data-lucide', 'mic-off'); icon.className = 'w-4 h-4 text-slate-500'; }
+            } else {
+                btn.classList.add('border-slate-700/50', 'bg-slate-900/80');
+                if (icon) { icon.setAttribute('data-lucide', 'mic'); icon.className = 'w-4 h-4 text-slate-400'; }
+            }
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+
+        function applyRoleBadge() {
+            const badge = document.getElementById('role-badge');
+            if (!badge) return;
+            if (appRole === 'standalone') {
+                badge.textContent = 'STANDALONE';
+                badge.className = 'text-[7px] font-black tracking-widest px-1.5 py-0.5 rounded-full border bg-slate-800 border-slate-600/60 text-slate-400';
+                badge.classList.remove('hidden');
+            } else if (appRole === 'instructor') {
+                badge.textContent = 'INSTR';
+                badge.className = 'text-[7px] font-black tracking-widest px-1.5 py-0.5 rounded-full border bg-emerald-950 border-emerald-700/60 text-emerald-400';
+                badge.classList.remove('hidden');
+            } else if (appRole === 'trainee') {
+                badge.textContent = 'TRNEE';
+                badge.className = 'text-[7px] font-black tracking-widest px-1.5 py-0.5 rounded-full border bg-sky-950 border-sky-700/60 text-sky-400';
+                badge.classList.remove('hidden');
+            }
+        }
+
+        function applyRoleUI() {
+            if (appRole === 'instructor') {
+                const spawnerSpdBox = document.getElementById('spawner-spd-box');
+                const spawnerAltBox = document.getElementById('spawner-alt-box');
+                const spawnerRngBox = document.getElementById('spawner-rng-box');
+                const spawnerBrgBox = document.getElementById('spawner-brg-box');
+                if (spawnerSpdBox) spawnerSpdBox.classList.add('hidden');
+                if (spawnerAltBox) spawnerAltBox.classList.add('hidden');
+                if (spawnerRngBox) { spawnerRngBox.classList.remove('hidden'); spawnerRngBox.classList.add('flex'); }
+                if (spawnerBrgBox) { spawnerBrgBox.classList.remove('hidden'); spawnerBrgBox.classList.add('flex'); }
+                const hdgInput = document.getElementById('init-hdg');
+                if (hdgInput) { hdgInput.value = ''; hdgInput.placeholder = '---'; }
+            }
+
+            if (appRole === 'trainee') {
+                // Default trainee to HOMING view
+                traineeViewMode = 'homing';
+                const radarScope = document.getElementById('radar-container');
+                const traineeHomBox = document.getElementById('trainee-hom-container');
+                if (radarScope) radarScope.classList.add('hidden');
+                if (traineeHomBox) {
+                    traineeHomBox.classList.remove('hidden');
+                    traineeHomBox.classList.add('flex');
+                }
+
+                const btnView = document.getElementById('btn-toggle-view');
+                if (btnView) {
+                    btnView.textContent = 'SHOW RADAR';
+                    btnView.className = "flex-shrink-0 px-2 py-1 bg-sky-900/60 hover:bg-sky-800 border border-sky-600/50 text-sky-200 text-[10px] font-black tracking-widest rounded transition-all";
+                }
+
+                const spawnerBar = document.getElementById('spawner-bar');
+                const traineeBar = document.getElementById('trainee-status-bar');
+                if (spawnerBar) spawnerBar.classList.add('hidden');
+                if (traineeBar) traineeBar.classList.remove('hidden');
+
+                const settingsBtn = document.getElementById('btn-settings');
+                if (settingsBtn) settingsBtn.classList.add('hidden');
+
+                const radarControlsLeft = document.getElementById('radar-controls-left');
+                if (radarControlsLeft) radarControlsLeft.classList.add('hidden');
+
+                const blipBtn = document.getElementById('btn-trainee-blips');
+                if (blipBtn) { blipBtn.classList.remove('hidden'); blipBtn.classList.add('flex'); }
+
+                const zoomIn = document.getElementById('btn-zoom-in');
+                const zoomOut = document.getElementById('btn-zoom-out');
+                if (zoomIn) zoomIn.classList.add('hidden');
+                if (zoomOut) zoomOut.classList.add('hidden');
+
+                const noTarget = document.getElementById('no-target-msg');
+                const tInfo = document.getElementById('target-info');
+                if (noTarget) noTarget.classList.add('hidden');
+                if (tInfo) tInfo.classList.add('hidden');
+
+                const acftArea = document.getElementById('aircraft-area-wrapper');
+                if (acftArea) { acftArea.classList.remove('flex-1'); acftArea.classList.add('flex-shrink-0'); }
+
+                const divider = document.getElementById('panel-divider');
+                if (divider) divider.classList.add('hidden');
+
+                const swPanel = document.getElementById('trainee-stopwatch');
+                if (swPanel) { swPanel.classList.remove('hidden'); }
+                swUpdateButtonStates();
+
+                updateUserNameDisplay();
+            }
+
+            if (appRole === 'standalone') {
+                const spawnerSpdBox = document.getElementById('spawner-spd-box');
+                const spawnerAltBox = document.getElementById('spawner-alt-box');
+                if (spawnerSpdBox) spawnerSpdBox.classList.add('hidden');
+                if (spawnerAltBox) spawnerAltBox.classList.add('hidden');
+                const spawnerRngBox2 = document.getElementById('spawner-rng-box');
+                const spawnerBrgBox2 = document.getElementById('spawner-brg-box');
+                if (spawnerRngBox2) { spawnerRngBox2.classList.remove('hidden'); spawnerRngBox2.classList.add('flex'); }
+                if (spawnerBrgBox2) { spawnerBrgBox2.classList.remove('hidden'); spawnerBrgBox2.classList.add('flex'); }
+                const hdgInput = document.getElementById('init-hdg');
+                if (hdgInput) { hdgInput.value = ''; hdgInput.placeholder = '---'; }
+                const telRow2 = document.getElementById('telemetry-row2');
+                if (telRow2) { telRow2.style.flex = '0'; telRow2.style.minHeight = '0'; telRow2.style.overflow = 'hidden'; telRow2.style.visibility = 'hidden'; telRow2.style.padding = '0'; telRow2.style.margin = '0'; telRow2.style.gap = '0'; telRow2.style.maxHeight = '0'; }
+                const altBox = document.getElementById('ctrl-alt-box');
+                const spdBox = document.getElementById('ctrl-spd-box');
+                if (altBox) altBox.classList.add('hidden');
+                if (spdBox) spdBox.classList.add('hidden');
+                const ctrlGrid = document.getElementById('ctrl-columns-grid');
+                if (ctrlGrid) {
+                    ctrlGrid.classList.remove('grid-cols-3');
+                    ctrlGrid.classList.add('grid-cols-1');
+                }
+                const ncBtn = document.getElementById('btn-no-compass');
+                if (ncBtn) { ncBtn.classList.remove('hidden'); ncBtn.classList.add('flex'); }
+                const blipBtnSA = document.getElementById('btn-trainee-blips');
+                if (blipBtnSA) { blipBtnSA.classList.remove('hidden'); blipBtnSA.classList.add('flex'); }
+                const saSw = document.getElementById('standalone-stopwatch');
+                if (saSw) saSw.classList.remove('hidden');
+                swUpdateButtonStates();
+            }
+        }
+
+        function toggleTraineeBlips() {
+            showBlips = !showBlips;
+            const btn = document.getElementById('btn-trainee-blips');
+            if (!btn) return;
+            if (showBlips) {
+                btn.classList.remove('text-slate-500', 'border-slate-600/50', 'bg-slate-900/80');
+                btn.classList.add('text-sky-400', 'border-sky-500/60', 'bg-sky-950/60');
+                btn.innerHTML = '<i data-lucide="eye" class="w-3.5 h-3.5"></i>';
+            } else {
+                btn.classList.add('text-slate-500', 'border-slate-600/50');
+                btn.classList.remove('text-sky-400', 'border-sky-500/60', 'bg-sky-950/60');
+                btn.innerHTML = '<i data-lucide="eye-off" class="w-3.5 h-3.5"></i>';
+            }
+            lucide.createIcons();
+            if (appRole === 'standalone' && selectedAircraft) updateControllerTelemetry();
+        }
+
+        function toggleNoCompassIcon() {
+            noCompassMode = !noCompassMode;
+            const btn = document.getElementById('btn-no-compass');
+            if (btn) {
+                if (noCompassMode) {
+                    btn.classList.add('border-amber-500/70', 'bg-amber-950/40', 'text-amber-400');
+                    btn.classList.remove('border-slate-600/50', 'bg-slate-900/80', 'text-slate-400');
+                    btn.title = 'Compass hidden — tap to show';
+                } else {
+                    btn.classList.remove('border-amber-500/70', 'bg-amber-950/40', 'text-amber-400');
+                    btn.classList.add('border-slate-600/50', 'bg-slate-900/80', 'text-slate-400');
+                    btn.title = 'Compass shown — tap to hide';
+                }
+            }
+            if (selectedAircraft) syncControllerLabels();
+        }
+
+        function toggleNoCompass(checked) {
+            noCompassMode = checked;
+            if (selectedAircraft) syncControllerLabels();
+        }
+
+        function sendUserInfo() {
+            if (!p2pConn || !p2pConn.open) return;
+            if (appRole !== 'instructor' && appRole !== 'trainee') return;
+            try {
+                p2pConn.send({
+                    type: 'userInfo',
+                    instructorName: instructorName || 'Instructor',
+                    traineeName: traineeName || 'Trainee'
+                });
+            } catch (e) {
+                console.warn('Failed to send user info:', e);
+            }
+            if (appRole === 'instructor') {
+                try {
+                    p2pConn.send({ type: 'trackSettings', outboundTrack: settings.outboundTrack, inboundTrack: settings.inboundTrack });
+                } catch(e) { console.warn('P2P trackSettings send error', e); }
+            }
+        }
+
+        function updateUserNameDisplay() {
+            const badge = document.getElementById('user-name-badge');
+            const sessionId = (appRole === 'instructor') ? (peer ? peer.id : '---') : (traineeTargetInstructorId || '---');
+
+            if (appRole === 'instructor') {
+                if (badge) {
+                    badge.classList.remove('hidden');
+                    badge.textContent = `${instructorName || 'Instructor'} (${sessionId})`;
+                }
+            }
+            if (appRole === 'trainee') {
+                if (badge) {
+                    badge.classList.remove('hidden');
+                    badge.textContent = `${traineeName || 'Trainee'} (${sessionId})`;
+                }
+            }
+        }
+
+        function broadcastLineState(activeLineDisplay, bearing) {
+            if (appRole !== 'instructor') return;
+            if (!p2pConn || !p2pConn.open) return;
+            try {
+                p2pConn.send({
+                    type: 'lineDisplay',
+                    activeLineDisplay: activeLineDisplay,
+                    bearing: bearing
+                });
+            } catch(e) {
+                console.warn('P2P send error:', e);
+            }
+        }
+
+        window.addEventListener('beforeunload', () => {
+            stopHeartbeat();
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            if (voiceCall) try { voiceCall.close(); } catch(e){}
+            if (localAudioStream) try { localAudioStream.getTracks().forEach(t => t.stop()); } catch(e){}
+            if (p2pConn && p2pConn.open) try { p2pConn.close(); } catch(e){}
+            if (peer) try { peer.destroy(); } catch(e){}
+        });
+    </script>
+
+    <!-- Radar Controller Application Core -->
+    <script>
+        const canvas = document.getElementById('radarCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let isSimulationRunning = false;
+        let aircrafts = [];
+        let selectedAircraft = null;
+        let radarAngle = -Math.PI / 2;
+        const sweepSpeed = 0.012; 
+        
+        let settings = {
+            showSweep: true,
+            showRings: true,
+            showDistanceLabels: true,
+            showAngleMarkers: true,
+            outboundTrack: 140,
+            inboundTrack: 300
+        };
+        
+        let isSpawnerArmed = false;
+
+        const zoomSteps = [10, 20, 30, 40, 50, 60];
+        let zoomIndex = 2;
+        let isNavLocked = true;
+
+        const SVG_UNLOCKED = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>`;
+        const SVG_LOCKED   = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
+
+        function toggleNavLock() {
+            if (appRole === 'trainee') return;
+            isNavLocked = !isNavLocked;
+            const btn = document.getElementById('btn-nav-lock');
+            if (btn) {
+                btn.innerHTML = isNavLocked ? SVG_LOCKED : SVG_UNLOCKED;
+                btn.classList.toggle('border-amber-500/70', isNavLocked);
+                btn.classList.toggle('text-amber-400', isNavLocked);
+                btn.classList.toggle('border-slate-600/50', !isNavLocked);
+                btn.classList.toggle('text-slate-400', !isNavLocked);
+            }
+        }
+
+        function adjustZoom(dir) {
+            if (appRole === 'trainee' || isNavLocked) return;
+            zoomIndex = Math.max(0, Math.min(zoomSteps.length - 1, zoomIndex - dir));
+        }
+        function getZoomNM() { return zoomSteps[zoomIndex]; }
+
+        let panX_NM = 0, panY_NM = 0;
+        let isPanning = false, panMoved = false, panStartX = 0, panStartY = 0, panStartOffsetX = 0, panStartOffsetY = 0;
+
+        function resetPan() {
+            if (appRole === 'trainee' || isNavLocked) return;
+            panX_NM = 0; panY_NM = 0;
+            zoomIndex = 2;
+        }
+
+        function computeLineEdgeDistance(canvasRad, cx, cy, w, h) {
+            const cr = Math.cos(canvasRad), sr = Math.sin(canvasRad);
+            const tx = cr !== 0 ? (cr > 0 ? (w - cx) : cx) / Math.abs(cr) : Infinity;
+            const ty = sr !== 0 ? (sr > 0 ? (h - cy) : cy) / Math.abs(sr) : Infinity;
+            return Math.min(tx, ty);
+        }
+
+        function initPanHandlers() {
+            canvas.addEventListener('mousedown', (e) => {
+                if (appRole === 'trainee' || isSpawnerArmed || isNavLocked) return;
+                isPanning = true;
+                panMoved = false;
+                panStartX = e.clientX; panStartY = e.clientY;
+                panStartOffsetX = panX_NM; panStartOffsetY = panY_NM;
+                canvas.style.cursor = 'grabbing';
+            });
+            canvas.addEventListener('mousemove', (e) => {
+                if (appRole === 'trainee' || !isPanning) return;
+                panMoved = true;
+                const rect = canvas.getBoundingClientRect();
+                const w = canvas.width / window.devicePixelRatio;
+                const h = canvas.height / window.devicePixelRatio;
+                const radarRadius = Math.min(w, h) / 2 - 12;
+                const pxPerNM = radarRadius / getZoomNM();
+                panX_NM = panStartOffsetX - (e.clientX - panStartX) / pxPerNM;
+                panY_NM = panStartOffsetY + (e.clientY - panStartY) / pxPerNM;
+            });
+            canvas.addEventListener('mouseup', (e) => {
+                const wasMoved = panMoved;
+                isPanning = false;
+                panMoved = false;
+                canvas.style.cursor = 'crosshair';
+                if (isSpawnerArmed && !wasMoved) handleMapSelection(e);
+            });
+            canvas.addEventListener('mouseleave', () => { isPanning = false; panMoved = false; canvas.style.cursor = 'crosshair'; });
+
+            let lastTouch = null;
+            canvas.addEventListener('touchstart', (e) => {
+                lastTouch = e.touches[0];
+                if (appRole === 'trainee' || isSpawnerArmed || isNavLocked || e.touches.length !== 1) return;
+                isPanning = true;
+                panMoved = false;
+                panStartX = e.touches[0].clientX; panStartY = e.touches[0].clientY;
+                panStartOffsetX = panX_NM; panStartOffsetY = panY_NM;
+            }, { passive: true });
+            canvas.addEventListener('touchmove', (e) => {
+                if (appRole === 'trainee' || !isPanning || e.touches.length !== 1) return;
+                panMoved = true;
+                lastTouch = e.touches[0];
+                const w = canvas.width / window.devicePixelRatio;
+                const h = canvas.height / window.devicePixelRatio;
+                const radarRadius = Math.min(w, h) / 2 - 12;
+                const pxPerNM = radarRadius / getZoomNM();
+                panX_NM = panStartOffsetX - (e.touches[0].clientX - panStartX) / pxPerNM;
+                panY_NM = panStartOffsetY + (e.touches[0].clientY - panStartY) / pxPerNM;
+            }, { passive: true });
+            canvas.addEventListener('touchend', (e) => {
+                isPanning = false;
+                if (isSpawnerArmed && lastTouch && !panMoved) {
+                    handleMapSelection({ clientX: lastTouch.clientX, clientY: lastTouch.clientY });
+                }
+                lastTouch = null;
+                panMoved = false;
+            });
+        }
+
+        let activeLineDisplay = null;
+        function setLineDisplay(type, active) {
+            activeLineDisplay = active ? type : null;
+            const tileBrg = document.getElementById('tile-bearing');
+            const tileHom = document.getElementById('tile-homing');
+            const activeClass = ['bg-amber-500/20', 'border-amber-400'];
+            const inactiveClassBrg = ['bg-emerald-950/10', 'border-emerald-900/40'];
+            const inactiveClassHom = ['bg-emerald-950/10', 'border-emerald-900/40'];
+            if (activeLineDisplay === 'bearing') {
+                tileBrg.classList.add(...activeClass);
+                tileBrg.classList.remove(...inactiveClassBrg);
+                tileHom.classList.remove(...activeClass);
+                tileHom.classList.add(...inactiveClassHom);
+            } else if (activeLineDisplay === 'homing') {
+                tileHom.classList.add(...activeClass);
+                tileHom.classList.remove(...inactiveClassHom);
+                tileBrg.classList.remove(...activeClass);
+                tileBrg.classList.add(...inactiveClassBrg);
+            } else {
+                tileBrg.classList.remove(...activeClass); tileBrg.classList.add(...inactiveClassBrg);
+                tileHom.classList.remove(...activeClass); tileHom.classList.add(...inactiveClassHom);
+            }
+
+            if (selectedAircraft) {
+                const brg = getAircraftBearing(selectedAircraft);
+                broadcastLineState(activeLineDisplay, brg);
+            }
+        }
+        
+        function resizeCanvas() {
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * window.devicePixelRatio;
+            canvas.height = rect.height * window.devicePixelRatio;
+            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        window.onload = function() {
+            lucide.createIcons();
+            resizeCanvas();
+            applySettingsUI();
+            renderAircraftTabs();
+            initPanHandlers();
+            const navLockBtn = document.getElementById('btn-nav-lock');
+            if (navLockBtn) {
+                navLockBtn.innerHTML = SVG_LOCKED;
+                navLockBtn.classList.add('border-amber-500/70', 'text-amber-400');
+                navLockBtn.classList.remove('border-slate-600/50', 'text-slate-400');
+            }
+            setInterval(processOneSecondPhysicsTick, 1000);
+            requestAnimationFrame(renderDrawLoop);
+        };
+
+        function openSettings() {
+            document.getElementById('set-sweep').checked = settings.showSweep;
+            document.getElementById('set-rings').checked = settings.showRings;
+            document.getElementById('set-dist-labels').checked = settings.showDistanceLabels;
+            document.getElementById('set-angles').checked = settings.showAngleMarkers;
+            document.getElementById('set-outbound-track').value = settings.outboundTrack;
+            document.getElementById('set-inbound-track').value = settings.inboundTrack;
+
+            document.getElementById('settings-modal').classList.remove('hidden');
+        }
+
+        function closeSettings() {
+            document.getElementById('settings-modal').classList.add('hidden');
+        }
+
+        function updateSetting(key, val) {
+            settings[key] = val;
+            applySettingsUI();
+        }
+
+        function updateTrackSetting(key, val) {
+            const num = parseInt(val);
+            if (!isNaN(num) && num >= 1 && num <= 360) {
+                settings[key] = num;
+                if (appRole === 'instructor' && p2pConn && p2pConn.open) {
+                    try {
+                        p2pConn.send({ type: 'trackSettings', outboundTrack: settings.outboundTrack, inboundTrack: settings.inboundTrack });
+                    } catch(e) { console.warn('P2P trackSettings send error', e); }
+                }
+            }
+        }
+
+        function applySettingsUI() {}
+
+        function toggleSimulation() {
+            isSimulationRunning = !isSimulationRunning;
+            
+            const btn = document.getElementById('btn-toggle-sim');
+            const btnIcon = document.getElementById('sim-btn-icon');
+            const indicator = document.getElementById('status-indicator');
+
+            if (isSimulationRunning) {
+                btn.className = "flex-shrink-0 w-8 h-7 bg-emerald-600 text-slate-950 rounded flex items-center justify-center transition-all";
+                btnIcon.setAttribute('data-lucide', 'square');
+                indicator.className = "w-1.5 h-1.5 flex-shrink-0 bg-emerald-500 rounded-full shadow-[0_0_6px_rgba(16,185,129,0.9)]";
+            } else {
+                btn.className = "flex-shrink-0 w-8 h-7 bg-red-600 text-slate-950 rounded flex items-center justify-center transition-all";
+                btnIcon.setAttribute('data-lucide', 'play');
+                indicator.className = "w-1.5 h-1.5 flex-shrink-0 bg-red-500 rounded-full shadow-[0_0_5px_rgba(239,68,68,0.8)]";
+            }
+            lucide.createIcons();
+
+            if (typeof appRole !== 'undefined' && appRole === 'instructor' && p2pConn && p2pConn.open) {
+                try { p2pConn.send({ type: 'simState', running: isSimulationRunning }); } catch(e) {}
+            }
+        }
+
+        function toggleSpawnerArming() {
+            if (aircrafts.length >= 4) return;
+            if (appRole === 'standalone') {
+                spawnStandaloneAircraft();
+                return;
+            }
+            if (appRole === 'instructor') {
+                spawnInstructorAircraft();
+                return;
+            }
+            const btn = document.getElementById('btn-arm-spawner');
+            isSpawnerArmed = !isSpawnerArmed;
+            if (isSpawnerArmed) {
+                btn.className = "flex-shrink-0 w-8 h-7 bg-amber-500 text-slate-950 rounded flex items-center justify-center transition-all animate-pulse";
+            } else {
+                resetSpawnerButton();
+            }
+        }
+
+        function spawnStandaloneAircraft() {
+            if (aircrafts.length >= 4) return;
+
+            const hdgRaw = document.getElementById('init-hdg').value.trim();
+            const hdgVal = parseInt(hdgRaw);
+            let initHdg, hdgInvalid = false;
+            if (hdgRaw === '') {
+                initHdg = Math.floor(Math.random() * 360);
+            } else if (isNaN(hdgVal) || hdgVal < 1 || hdgVal > 360) {
+                initHdg = Math.floor(Math.random() * 360);
+                hdgInvalid = true;
+            } else {
+                initHdg = ((hdgVal % 360) + 360) % 360;
+            }
+
+            const rngRaw = document.getElementById('init-rng').value.trim();
+            const rngVal = parseFloat(rngRaw);
+            let useRng = false, rngInvalid = false;
+            if (rngRaw !== '') {
+                if (isNaN(rngVal) || rngVal < 1 || rngVal > 30) { rngInvalid = true; }
+                else { useRng = true; }
+            }
+
+            const brgRaw = document.getElementById('init-brg').value.trim();
+            const brgVal = parseInt(brgRaw);
+            let useBrg = false, brgInvalid = false;
+            if (brgRaw !== '') {
+                if (isNaN(brgVal) || brgVal < 1 || brgVal > 360) { brgInvalid = true; }
+                else { useBrg = true; }
+            }
+
+            const errs = [];
+            if (hdgInvalid) errs.push('Hdg: 001–360');
+            if (rngInvalid) errs.push('Rng: 1–30 NM');
+            if (brgInvalid) errs.push('Brg: 001–360');
+            if (errs.length) showRadarToast('⚠ Invalid: ' + errs.join(', ') + ' — using random');
+
+            let x_nm, y_nm;
+            if (useRng && useBrg) {
+                const placeRad = ((90 - brgVal) * Math.PI) / 180;
+                x_nm = Math.cos(placeRad) * rngVal;
+                y_nm = Math.sin(placeRad) * rngVal;
+            } else if (useRng) {
+                const placeBrg = Math.random() * 360;
+                const placeRad = ((90 - placeBrg) * Math.PI) / 180;
+                x_nm = Math.cos(placeRad) * rngVal;
+                y_nm = Math.sin(placeRad) * rngVal;
+            } else if (useBrg) {
+                const rangNM = 20 + Math.random() * 5;
+                const placeRad = ((90 - brgVal) * Math.PI) / 180;
+                x_nm = Math.cos(placeRad) * rangNM;
+                y_nm = Math.sin(placeRad) * rangNM;
+            } else {
+                const rangNM = 20 + Math.random() * 5;
+                const placeBrg = Math.random() * 360;
+                const placeRad = ((90 - placeBrg) * Math.PI) / 180;
+                x_nm = Math.cos(placeRad) * rangNM;
+                y_nm = Math.sin(placeRad) * rangNM;
+            }
+
+            const newAc = {
+                id: generateCallsign(), x_nm, y_nm,
+                heading: initHdg, assignedHeading: initHdg,
+                speed: 300, assignedSpeed: 300,
+                altitude: 15000, assignedAltitude: 15000,
+                history: [], turnRateLimit: 2,
+                continuousAction: { turn: null, altitude: null, speed: null },
+                tickCount: 0
+            };
+            aircrafts.push(newAc);
+            selectedAircraft = newAc;
+            loadTargetIntoControls();
+
+            ['init-hdg', 'init-rng', 'init-brg'].forEach(id => {
+                const el = document.getElementById(id); if (el) el.value = '';
+            });
+
+            const btn = document.getElementById('btn-arm-spawner');
+            if (btn) {
+                btn.className = "flex-shrink-0 w-8 h-7 bg-amber-500 text-slate-950 rounded flex items-center justify-center transition-all";
+                setTimeout(() => resetSpawnerButton(), 300);
+            }
+        }
+
+        function spawnInstructorAircraft() {
+            if (aircrafts.length >= 4) return;
+
+            const hdgRaw = document.getElementById('init-hdg').value.trim();
+            const hdgVal = parseInt(hdgRaw);
+            let initHdg, hdgInvalid = false;
+            if (hdgRaw === '') {
+                initHdg = Math.floor(Math.random() * 360);
+            } else if (isNaN(hdgVal) || hdgVal < 1 || hdgVal > 360) {
+                initHdg = Math.floor(Math.random() * 360);
+                hdgInvalid = true;
+            } else {
+                initHdg = ((hdgVal % 360) + 360) % 360;
+            }
+
+            const rngRaw = document.getElementById('init-rng').value.trim();
+            const rngVal = parseFloat(rngRaw);
+            let useRng = false, rngInvalid = false;
+            if (rngRaw !== '') {
+                if (isNaN(rngVal) || rngVal < 1 || rngVal > 30) { rngInvalid = true; }
+                else { useRng = true; }
+            }
+
+            const brgRaw = document.getElementById('init-brg').value.trim();
+            const brgVal = parseInt(brgRaw);
+            let useBrg = false, brgInvalid = false;
+            if (brgRaw !== '') {
+                if (isNaN(brgVal) || brgVal < 1 || brgVal > 360) { brgInvalid = true; }
+                else { useBrg = true; }
+            }
+
+            const errs = [];
+            if (hdgInvalid) errs.push('Hdg: 001–360');
+            if (rngInvalid) errs.push('Rng: 1–30 NM');
+            if (brgInvalid) errs.push('Brg: 001–360');
+            if (errs.length) showRadarToast('⚠ Invalid: ' + errs.join(', ') + ' — using random');
+
+            let x_nm, y_nm;
+            if (useRng && useBrg) {
+                const placeRad = ((90 - brgVal) * Math.PI) / 180;
+                x_nm = Math.cos(placeRad) * rngVal;
+                y_nm = Math.sin(placeRad) * rngVal;
+            } else if (useRng) {
+                const placeBrg = Math.random() * 360;
+                const placeRad = ((90 - placeBrg) * Math.PI) / 180;
+                x_nm = Math.cos(placeRad) * rngVal;
+                y_nm = Math.sin(placeRad) * rngVal;
+            } else if (useBrg) {
+                const rangNM = 20 + Math.random() * 5;
+                const placeRad = ((90 - brgVal) * Math.PI) / 180;
+                x_nm = Math.cos(placeRad) * rangNM;
+                y_nm = Math.sin(placeRad) * rangNM;
+            } else {
+                const rangNM = 20 + Math.random() * 5;
+                const placeBrg = Math.random() * 360;
+                const placeRad = ((90 - placeBrg) * Math.PI) / 180;
+                x_nm = Math.cos(placeRad) * rangNM;
+                y_nm = Math.sin(placeRad) * rangNM;
+            }
+
+            const newAc = {
+                id: generateCallsign(), x_nm, y_nm,
+                heading: initHdg, assignedHeading: initHdg,
+                speed: 300, assignedSpeed: 300,
+                altitude: 15000, assignedAltitude: 15000,
+                history: [], turnRateLimit: 2,
+                continuousAction: { turn: null, altitude: null, speed: null },
+                tickCount: 0
+            };
+            aircrafts.push(newAc);
+            selectedAircraft = newAc;
+            loadTargetIntoControls();
+
+            ['init-hdg', 'init-rng', 'init-brg'].forEach(id => {
+                const el = document.getElementById(id); if (el) el.value = '';
+            });
+
+            const btn = document.getElementById('btn-arm-spawner');
+            if (btn) {
+                btn.className = "flex-shrink-0 w-8 h-7 bg-amber-500 text-slate-950 rounded flex items-center justify-center transition-all";
+                setTimeout(() => resetSpawnerButton(), 300);
+            }
+
+            if (p2pConn && p2pConn.open) {
+                try {
+                    p2pConn.send({ type: 'spawn', aircraft: newAc, selectedId: newAc.id });
+                } catch (e) { console.warn('P2P spawn send error', e); }
+            }
+        }
+
+        function resetSpawnerButton() {
+            isSpawnerArmed = false;
+            const btn = document.getElementById('btn-arm-spawner');
+            if (!btn) return;
+            if (aircrafts.length >= 4) {
+                btn.className = "flex-shrink-0 w-8 h-7 bg-slate-700 text-slate-500 rounded flex items-center justify-center transition-all cursor-not-allowed opacity-50";
+                btn.title = "Max 4 aircraft reached";
+            } else {
+                btn.className = "flex-shrink-0 w-8 h-7 bg-emerald-600 text-slate-950 rounded flex items-center justify-center transition-all";
+                btn.title = "";
+            }
+        }
+
+        function generateCallsign() {
+            const types = ['JAG', 'RAF', 'MIR', 'MIG', 'SU', 'TEJ', 'HWK'];
+            const type = types[Math.floor(Math.random() * types.length)];
+            const num  = Math.floor(100 + Math.random() * 900);
+            return `${type}-${num}`;
+        }
+
+        function renderAircraftTabs() {
+            const container = document.getElementById('target-tabs-container');
+            if (!container) return;
+            container.innerHTML = '';
+
+            if (appRole !== 'trainee') {
+                const spawnBtn = document.getElementById('btn-arm-spawner');
+                if (spawnBtn) {
+                    if (aircrafts.length >= 4) {
+                        spawnBtn.className = "flex-shrink-0 w-8 h-7 bg-slate-700 text-slate-500 rounded flex items-center justify-center transition-all cursor-not-allowed opacity-50";
+                        spawnBtn.title = "Max 4 aircraft reached";
+                    } else if (!isSpawnerArmed) {
+                        spawnBtn.className = "flex-shrink-0 w-8 h-7 bg-emerald-600 text-slate-950 rounded flex items-center justify-center transition-all";
+                        spawnBtn.title = "";
+                    }
+                }
+            }
+            
+            if (aircrafts.length === 0) {
+                if (appRole !== 'trainee') {
+                    document.getElementById('no-target-msg').classList.remove('hidden');
+                    document.getElementById('target-info').classList.add('hidden');
+                    document.getElementById('target-actions').classList.add('hidden');
+                }
+                return;
+            }
+
+            if (appRole !== 'trainee') {
+                document.getElementById('no-target-msg').classList.add('hidden');
+                document.getElementById('target-info').classList.remove('hidden');
+                document.getElementById('target-actions').classList.remove('hidden');
+            }
+
+            aircrafts.forEach(ac => {
+                const btn = document.createElement('button');
+                const isSelected = selectedAircraft === ac;
+
+                if (appRole === 'trainee') {
+                    btn.className = `px-1.5 py-1 text-[10px] font-bold rounded transition-all duration-150 flex items-center gap-0.5 border flex-shrink-0 cursor-default ${
+                        isSelected
+                        ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-[0_0_8px_rgba(245,158,11,0.3)]'
+                        : 'bg-slate-900 text-emerald-400 border-emerald-900/50'
+                    }`;
+                    btn.innerHTML = `<i data-lucide="plane" class="w-3 h-3"></i> ${ac.id}`;
+                } else {
+                    btn.className = `px-1.5 py-1 text-[10px] font-bold rounded transition-all duration-150 flex items-center gap-0.5 border flex-shrink-0 ${
+                        isSelected
+                        ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-[0_0_8px_rgba(245,158,11,0.3)]'
+                        : 'bg-slate-900 text-emerald-400 border-emerald-900/50 hover:bg-emerald-950/40'
+                    }`;
+                    btn.innerHTML = `<i data-lucide="plane" class="w-3 h-3"></i> ${ac.id}`;
+                    btn.onclick = () => {
+                        selectedAircraft = ac;
+                        loadTargetIntoControls();
+                    };
+                }
+                container.appendChild(btn);
+            });
+            lucide.createIcons({ nameAttr: 'data-lucide', rootNode: container });
+        }
+
+        function getAircraftBearing(ac) {
+            let rad = Math.atan2(ac.y_nm, ac.x_nm);
+            let deg = (rad * 180) / Math.PI;
+            let bearing = 90 - deg;
+            if (bearing < 0) bearing += 360;
+            return Math.round(bearing);
+        }
+
+        function getAircraftHoming(bearing) {
+            return (bearing + 180) % 360;
+        }
+
+        function processOneSecondPhysicsTick() {
+            if (!isSimulationRunning) return;
+
+            const elapsedSec = 1.0; 
+
+            aircrafts.forEach((ac) => {
+                const ca = ac.continuousAction || {};
+                if (ca.turn === 'left')  ac.assignedHeading = (ac.assignedHeading - 2 + 360) % 360;
+                if (ca.turn === 'right') ac.assignedHeading = (ac.assignedHeading + 2) % 360;
+                if (ca.altitude === 'up')   ac.assignedAltitude = Math.min(40000, ac.assignedAltitude + 50);
+                if (ca.altitude === 'down') ac.assignedAltitude = Math.max(2000,  ac.assignedAltitude - 50);
+                if (ca.speed === 'increase') ac.assignedSpeed = Math.min(600, ac.assignedSpeed + 10);
+                if (ca.speed === 'decrease') ac.assignedSpeed = Math.max(100, ac.assignedSpeed - 10);
+
+                if (ac.heading !== ac.assignedHeading) {
+                    const turnRateLimit = ac.turnRateLimit || 2; 
+
+                    let diff = ac.assignedHeading - ac.heading;
+                    while (diff < -180) diff += 360;
+                    while (diff > 180) diff -= 360;
+
+                    if (Math.abs(diff) <= turnRateLimit) {
+                        ac.heading = ac.assignedHeading;
+                    } else {
+                        const step = Math.sign(diff) * turnRateLimit;
+                        ac.heading = (ac.heading + step + 360) % 360;
+                    }
+                }
+
+                if (ac.altitude !== ac.assignedAltitude) {
+                    const altDiff = ac.assignedAltitude - ac.altitude;
+                    const verticalRate = 500;
+                    if (Math.abs(altDiff) <= verticalRate) {
+                        ac.altitude = ac.assignedAltitude;
+                    } else {
+                        ac.altitude += Math.sign(altDiff) * verticalRate;
+                    }
+                }
+
+                if (ac.speed !== ac.assignedSpeed) {
+                    const spdDiff = ac.assignedSpeed - ac.speed;
+                    const accelRate = 10;
+                    if (Math.abs(spdDiff) <= accelRate) {
+                        ac.speed = ac.assignedSpeed;
+                    } else {
+                        ac.speed += Math.sign(spdDiff) * accelRate;
+                    }
+                }
+
+                ac.tickCount = (ac.tickCount || 0) + 1;
+
+                const mathRad = ((90 - ac.heading) * Math.PI) / 180;
+                const nmPerSecond = ac.speed / 3600;
+                const distanceTraveled = nmPerSecond * elapsedSec;
+
+                ac.x_nm += Math.cos(mathRad) * distanceTraveled;
+                ac.y_nm += Math.sin(mathRad) * distanceTraveled;
+
+                if (ac.tickCount % 4 === 0) {
+                    const wasTurning = Math.abs(ac.heading - ac.assignedHeading) > 0.5
+                        || (ac.continuousAction && ac.continuousAction.turn !== null);
+                    ac.history.push({ x: ac.x_nm, y: ac.y_nm, turning: wasTurning });
+                }
+            });
+
+            if (typeof appRole !== 'undefined' && appRole === 'instructor' && selectedAircraft && activeLineDisplay) {
+                const brg = getAircraftBearing(selectedAircraft);
+                broadcastLineState(activeLineDisplay, brg);
+            }
+
+            if (typeof appRole !== 'undefined' && appRole === 'instructor' && p2pConn && p2pConn.open) {
+                try {
+                    const snapshot = aircrafts.map(ac => ({ id: ac.id, x_nm: ac.x_nm, y_nm: ac.y_nm, heading: ac.heading, assignedHeading: ac.assignedHeading, speed: ac.speed, assignedSpeed: ac.assignedSpeed, altitude: ac.altitude, assignedAltitude: ac.assignedAltitude, tickCount: ac.tickCount, history: ac.history }));
+                    p2pConn.send({ type: 'stateSnapshot', aircrafts: snapshot, selectedId: selectedAircraft ? selectedAircraft.id : null });
+                } catch (e) { console.warn('P2P snapshot send error', e); }
+            }
+
+            if (selectedAircraft) updateControllerTelemetry();
+        }
+
+        let _toastTimer = null;
+        function showRadarToast(msg) {
+            const el = document.getElementById('radar-toast');
+            if (!el) return;
+            el.textContent = msg;
+            el.style.opacity = '1';
+            el.classList.remove('hidden');
+            if (_toastTimer) clearTimeout(_toastTimer);
+            _toastTimer = setTimeout(() => {
+                el.style.opacity = '0';
+                setTimeout(() => el.classList.add('hidden'), 420);
+            }, 3500);
+        }
+
+        function renderDrawLoop() {
+            const w = canvas.width / window.devicePixelRatio;
+            const h = canvas.height / window.devicePixelRatio;
+            const rawCenter = { x: w / 2, y: h / 2 };
+            const radarRadius = Math.min(w, h) / 2 - 12;
+            const zoomNM = getZoomNM();
+            const pxPerNM = radarRadius / zoomNM;
+            const center = { x: rawCenter.x - panX_NM * pxPerNM, y: rawCenter.y + panY_NM * pxPerNM };
+
+            ctx.fillStyle = 'rgba(2, 6, 4, 1)';
+            ctx.fillRect(0, 0, w, h);
+
+            if (settings.showRings && appRole !== 'trainee') {
+                const cornerRadius = Math.sqrt((w / 2) * (w / 2) + (h / 2) * (h / 2));
+                const cornerNM = (cornerRadius / radarRadius) * zoomNM;
+                const maxNM = Math.max(100, Math.ceil(cornerNM / 10) * 10);
+                for (let ringNM = 10; ringNM <= maxNM; ringNM += 10) {
+                    const ringRadiusPixels = (ringNM / zoomNM) * radarRadius;
+                    ctx.beginPath();
+                    ctx.arc(center.x, center.y, ringRadiusPixels, 0, Math.PI * 2);
+                    if (ringNM === 60) {
+                        ctx.strokeStyle = appRole === 'trainee' ? 'rgba(255, 255, 255, 0.35)' : 'rgba(255, 255, 255, 0.55)';
+                        ctx.lineWidth = appRole === 'trainee' ? 1.5 : 2.2;
+                    } else {
+                        ctx.strokeStyle = appRole === 'trainee' ? 'rgba(255, 255, 255, 0.07)' : 'rgba(255, 255, 255, 0.18)';
+                        ctx.lineWidth = appRole === 'trainee' ? 0.7 : 1.2;
+                    }
+                    ctx.stroke();
+                    if (settings.showDistanceLabels) {
+                        ctx.fillStyle = appRole === 'trainee' ? (ringNM === 60 ? 'rgba(255,255,255,0.40)' : 'rgba(255,255,255,0.15)') : (ringNM === 60 ? 'rgba(255,255,255,0.60)' : 'rgba(255,255,255,0.25)');
+                        ctx.font = '8px monospace';
+                        ctx.fillText(`${ringNM}NM`, center.x + 4, center.y - ringRadiusPixels + 10);
+                    }
+                }
+            }
+
+            if (settings.showAngleMarkers) {
+                const lineReach = (100 / zoomNM) * radarRadius;
+                const cardinals = [
+                    { canvasDeg: 270 },
+                    { canvasDeg:  90 },
+                    { canvasDeg:   0 },
+                    { canvasDeg: 180 },
+                ];
+                cardinals.forEach(({ canvasDeg }) => {
+                    const rad = (canvasDeg * Math.PI) / 180;
+                    ctx.beginPath();
+                    ctx.moveTo(center.x, center.y);
+                    ctx.lineTo(center.x + Math.cos(rad) * lineReach, center.y + Math.sin(rad) * lineReach);
+                    const alpha = appRole === 'trainee' ? 0.25 : 0.18;
+                    const width = appRole === 'trainee' ? 1.4 : 1.2;
+                    ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+                    ctx.lineWidth = width;
+                    ctx.stroke();
+                });
+            }
+
+            {
+                const trackLengthPx = (15 / zoomNM) * radarRadius;
+                const obRad = ((90 - settings.outboundTrack) * Math.PI) / 180;
+                ctx.beginPath();
+                ctx.moveTo(center.x, center.y);
+                ctx.lineTo(center.x + Math.cos(obRad) * trackLengthPx, center.y - Math.sin(obRad) * trackLengthPx);
+                ctx.setLineDash([]);
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+                ctx.lineWidth = 1.2;
+                ctx.stroke();
+
+                const ibBearing = (settings.inboundTrack + 180) % 360;
+                const ibRad = ((90 - ibBearing) * Math.PI) / 180;
+                ctx.beginPath();
+                ctx.moveTo(center.x, center.y);
+                ctx.lineTo(center.x + Math.cos(ibRad) * trackLengthPx, center.y - Math.sin(ibRad) * trackLengthPx);
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+                ctx.lineWidth = 1.2;
+                ctx.stroke();
+            }
+
+            if (settings.showSweep && appRole !== 'trainee') {
+                if (isSimulationRunning) {
+                    radarAngle += sweepSpeed;
+                    if (radarAngle >= Math.PI * 2) radarAngle -= Math.PI * 2;
+                }
+
+                if (settings.showRings) {
+                    const cornerRadius2 = Math.sqrt((w / 2) * (w / 2) + (h / 2) * (h / 2));
+                    const cornerNM2 = (cornerRadius2 / radarRadius) * zoomNM;
+                    const maxNM = Math.max(100, Math.ceil(cornerNM2 / 10) * 10);
+                    const sweepSpan = Math.PI / 4;
+                    const startAngle = radarAngle - sweepSpan;
+
+                    for (let ringNM = 10; ringNM <= maxNM; ringNM += 10) {
+                        const ringRadiusPixels = (ringNM / zoomNM) * radarRadius;
+                        const steps = 12;
+                        for (let s = 0; s < steps; s++) {
+                            const a0 = startAngle + (s / steps) * sweepSpan;
+                            const a1 = startAngle + ((s + 1) / steps) * sweepSpan;
+                            const alpha = ringNM === 60
+                                ? (appRole === 'trainee' ? (0.08 + 0.55 * (s / steps)) : (0.18 + 0.65 * (s / steps)))
+                                : (appRole === 'trainee' ? (0.03 + 0.25 * (s / steps)) : (0.08 + 0.35 * (s / steps)));
+                            ctx.beginPath();
+                            ctx.arc(center.x, center.y, ringRadiusPixels, a0, a1);
+                            ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+                            ctx.lineWidth = appRole === 'trainee' ? (ringNM === 60 ? 1.8 : 0.9) : (ringNM === 60 ? 2.8 : 1.6);
+                            ctx.stroke();
+                        }
+                    }
+                }
+            }
+
+            ctx.font = '9px monospace';
+            aircrafts.forEach((ac) => {
+                const renderX = center.x + (ac.x_nm / zoomNM) * radarRadius;
+                const renderY = center.y - (ac.y_nm / zoomNM) * radarRadius;
+                const isSelected = selectedAircraft === ac;
+                const showVisuals = (appRole === 'instructor') || showBlips;
+
+                if (showVisuals && ac.history && ac.history.length > 0) {
+                    const dotR = isSelected ? (appRole === 'trainee' ? 2.1 : 1.4) : (appRole === 'trainee' ? 1.8 : 1.2);
+                    ac.history.forEach((hist) => {
+                        const hX = center.x + (hist.x / zoomNM) * radarRadius;
+                        const hY = center.y - (hist.y / zoomNM) * radarRadius;
+                        ctx.beginPath();
+                        ctx.arc(hX, hY, dotR, 0, Math.PI * 2);
+                        if (hist.turning) {
+                            ctx.fillStyle = isSelected ? 'rgba(34,211,238,0.90)' : 'rgba(34,211,238,0.60)';
+                        } else {
+                            ctx.fillStyle = isSelected ? 'rgba(253,224,71,0.75)' : 'rgba(253,224,71,0.50)';
+                        }
+                        ctx.fill();
+                    });
+                }
+
+                if (showVisuals) {
+                    const sq = isSelected ? (appRole === 'trainee' ? 6 : 4.8) : (appRole === 'trainee' ? 5.5 : 3.8);
+                    ctx.fillStyle = 'rgba(253, 224, 71, 1)';
+                    ctx.fillRect(renderX - sq, renderY - sq, sq * 2, sq * 2);
+
+                    ctx.fillStyle = 'rgba(253, 224, 71, 0.95)';
+                    ctx.fillText(ac.id, renderX + 9, renderY - 5);
+                    ctx.fillText(`${Math.round(ac.heading).toString().padStart(3,'0')}°`, renderX + 9, renderY + 6);
+                }
+
+                if (isSelected && activeLineDisplay && appRole !== 'trainee') {
+                    const bearing = getAircraftBearing(ac);
+                    const lineRad = ((90 - bearing) * Math.PI) / 180;
+                    const labelVal = activeLineDisplay === 'bearing'
+                        ? `B- ${bearing.toString().padStart(3,'0')}°`
+                        : `H- ${getAircraftHoming(bearing).toString().padStart(3,'0')}°`;
+                    const cos = Math.cos(lineRad), sin = -Math.sin(lineRad);
+                    const canvasRad = Math.atan2(sin, cos);
+                    const edgeD = computeLineEdgeDistance(canvasRad, center.x, center.y, w, h);
+                    ctx.beginPath();
+                    ctx.moveTo(center.x, center.y);
+                    ctx.lineTo(center.x + Math.cos(canvasRad) * edgeD, center.y + Math.sin(canvasRad) * edgeD);
+                    ctx.setLineDash([6, 5]);
+                    ctx.strokeStyle = 'rgba(56, 189, 248, 0.80)';
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    const labelDist = Math.max(30, edgeD - 45);
+                    const perpX = Math.cos(canvasRad - Math.PI/2) * 16;
+                    const perpY = Math.sin(canvasRad - Math.PI/2) * 16;
+                    const labelX = center.x + Math.cos(canvasRad) * labelDist + perpX;
+                    const labelY = center.y + Math.sin(canvasRad) * labelDist + perpY;
+                    ctx.fillStyle = 'rgba(56, 189, 248, 1)';
+                    ctx.font = 'bold 10px monospace';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(labelVal, labelX, labelY);
+                    ctx.textAlign = 'start';
+                }
+            });
+
+            if (appRole === 'trainee' && traineeLineState.active && traineeLineState.bearing !== null) {
+                const bearing = traineeLineState.bearing;
+                const lineRad = ((90 - bearing) * Math.PI) / 180;
+                const lineType = traineeLineState.active;
+                const labelVal = lineType === 'bearing'
+                    ? `B- ${bearing.toString().padStart(3,'0')}°`
+                    : `H- ${getAircraftHoming(bearing).toString().padStart(3,'0')}°`;
+                const cosR = Math.cos(lineRad), sinR = -Math.sin(lineRad);
+                const canvasRad = Math.atan2(sinR, cosR);
+                const edgeD = computeLineEdgeDistance(canvasRad, center.x, center.y, w, h);
+                ctx.beginPath();
+                ctx.moveTo(center.x, center.y);
+                ctx.lineTo(center.x + Math.cos(canvasRad) * edgeD, center.y + Math.sin(canvasRad) * edgeD);
+                ctx.setLineDash([]);
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
+                ctx.lineWidth = 1.6;
+                ctx.stroke();
+                const labelDistT = Math.max(30, edgeD - 45);
+                const perpXT = Math.cos(canvasRad - Math.PI/2) * 18;
+                const perpYT = Math.sin(canvasRad - Math.PI/2) * 18;
+                const labelX = center.x + Math.cos(canvasRad) * labelDistT + perpXT;
+                const labelY = center.y + Math.sin(canvasRad) * labelDistT + perpYT;
+                ctx.fillStyle = 'rgba(255, 255, 255, 1)';
+                ctx.font = 'bold 11px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText(labelVal, labelX, labelY);
+                ctx.textAlign = 'start';
+            }
+
+            requestAnimationFrame(renderDrawLoop);
+        }
+
+        function handleMapSelection(e) {
+            const rect = canvas.getBoundingClientRect();
+            const tapX = e.clientX - rect.left;
+            const tapY = e.clientY - rect.top;
+
+            const w = canvas.width / window.devicePixelRatio;
+            const h = canvas.height / window.devicePixelRatio;
+            const radarRadius = Math.min(w, h) / 2 - 12;
+            const zoomNM = getZoomNM();
+            const pxPerNM = radarRadius / zoomNM;
+            const dx = tapX - w / 2;
+            const dy = tapY - h / 2;
+            const clickX_NM = (dx / pxPerNM) + panX_NM;
+            const clickY_NM = -(dy / pxPerNM) + panY_NM;
+
+            if (isSpawnerArmed) {
+                if (aircrafts.length >= 4) { resetSpawnerButton(); return; }
+                const hdgRaw = document.getElementById('init-hdg').value.trim();
+                const initHdg = (hdgRaw !== '' && !isNaN(parseInt(hdgRaw)))
+                    ? ((parseInt(hdgRaw) % 360) + 360) % 360
+                    : Math.floor(Math.random() * 360);
+                const initSpd = parseInt(document.getElementById('init-spd').value) || 300;
+                const initAlt = parseInt(document.getElementById('init-alt').value) || 15000;
+                const newAc = { id: generateCallsign(), x_nm: clickX_NM, y_nm: clickY_NM, heading: initHdg, assignedHeading: initHdg, speed: initSpd, assignedSpeed: initSpd, altitude: initAlt, assignedAltitude: initAlt, history: [], turnRateLimit: 2, continuousAction: { turn: null, altitude: null, speed: null }, tickCount: 0 };
+                aircrafts.push(newAc);
+                selectedAircraft = newAc;
+                loadTargetIntoControls();
+                resetSpawnerButton();
+                if (typeof appRole !== 'undefined' && appRole === 'instructor' && p2pConn && p2pConn.open) {
+                    try {
+                        p2pConn.send({ type: 'spawn', aircraft: newAc, selectedId: newAc.id });
+                    } catch (e) { console.warn('P2P spawn send error', e); }
+                }
+            }
+        }
+
+        function loadTargetIntoControls() {
+            renderAircraftTabs();
+            if (!selectedAircraft) return;
+            syncControllerLabels();
+            updateContinuousActionUI();
+            updateControllerTelemetry();
+        }
+
+        function updateTurnRateSelection(rate) { if (selectedAircraft) selectedAircraft.turnRateLimit = rate; }
+        function steerTarget(deg) { if (!selectedAircraft) return; selectedAircraft.assignedHeading = (selectedAircraft.assignedHeading + deg + 360) % 360; syncControllerLabels(); }
+        function changeAltitudeTarget(amt) { if (!selectedAircraft) return; selectedAircraft.assignedAltitude = Math.max(2000, Math.min(40000, selectedAircraft.assignedAltitude + amt)); syncControllerLabels(); }
+        function changeSpeedTarget(amt) { if (!selectedAircraft) return; selectedAircraft.assignedSpeed = Math.max(100, Math.min(600, selectedAircraft.assignedSpeed + amt)); syncControllerLabels(); }
+
+        function startContinuousAction(category, direction) {
+            if (!selectedAircraft) return;
+            if (!selectedAircraft.continuousAction) selectedAircraft.continuousAction = { turn: null, altitude: null, speed: null };
+            selectedAircraft.continuousAction[category] = direction;
+            updateContinuousActionUI();
+        }
+
+        function stopContinuousAction(category) {
+            if (!selectedAircraft || !selectedAircraft.continuousAction) return;
+            selectedAircraft.continuousAction[category] = null;
+            if (category === 'turn')     selectedAircraft.assignedHeading  = Math.round(selectedAircraft.heading);
+            if (category === 'altitude') selectedAircraft.assignedAltitude = Math.round(selectedAircraft.altitude);
+            if (category === 'speed')    selectedAircraft.assignedSpeed    = Math.round(selectedAircraft.speed);
+            updateContinuousActionUI();
+            syncControllerLabels();
+        }
+
+        function updateContinuousActionUI() {
+            if (!selectedAircraft) return;
+            const ca = selectedAircraft.continuousAction || {};
+            setButtonActive('btn-turn-left',  ca.turn     === 'left');
+            setButtonActive('btn-turn-right', ca.turn     === 'right');
+            setButtonActive('btn-alt-down',   ca.altitude === 'down');
+            setButtonActive('btn-alt-up',     ca.altitude === 'up');
+            setButtonActive('btn-spd-dec',    ca.speed    === 'decrease');
+            setButtonActive('btn-spd-inc',    ca.speed    === 'increase');
+        }
+
+        function setButtonActive(id, active) {
+            const btn = document.getElementById(id);
+            if (!btn) return;
+            if (active) {
+                btn.classList.add('bg-amber-500/20', 'border-amber-500/50', 'text-amber-400');
+                btn.classList.remove('bg-slate-900', 'border-emerald-900/40', 'text-emerald-300');
+            } else {
+                btn.classList.remove('bg-amber-500/20', 'border-amber-500/50', 'text-amber-400');
+                btn.classList.add('bg-slate-900', 'border-emerald-900/40', 'text-emerald-300');
+            }
+        }
+        
+        function syncControllerLabels() {
+            if (!selectedAircraft) return;
+            const hdgEl = document.getElementById('display-hdg-assigned');
+            if (hdgEl) hdgEl.innerText = noCompassMode ? '---°' : `${selectedAircraft.assignedHeading.toString().padStart(3, '0')}°`;
+            document.getElementById('display-alt-assigned').innerText = `FL${Math.round(selectedAircraft.assignedAltitude/100)}`;
+            document.getElementById('display-spd-assigned').innerText = `${selectedAircraft.assignedSpeed} kt`;
+        }
+
+        function updateControllerTelemetry() {
+            if (!selectedAircraft) return;
+            const bearing = getAircraftBearing(selectedAircraft);
+            const homing = getAircraftHoming(bearing);
+            const distanceNM = Math.sqrt(selectedAircraft.x_nm**2 + selectedAircraft.y_nm**2);
+
+            const maskHidden = (appRole === 'standalone' && !showBlips);
+            document.getElementById('display-bearing').innerText  = maskHidden ? '---°'   : `${bearing.toString().padStart(3, '0')}°`;
+            document.getElementById('display-homing').innerText   = maskHidden ? '---°'   : `${homing.toString().padStart(3, '0')}°`;
+            document.getElementById('display-range').innerText    = maskHidden ? '-- NM'  : `${distanceNM.toFixed(1)} NM`;
+            document.getElementById('display-heading').innerText  = `${Math.round(selectedAircraft.heading).toString().padStart(3, '0')}°`;
+            document.getElementById('display-speed').innerText    = `${Math.round(selectedAircraft.speed)} kt`;
+            document.getElementById('display-altitude').innerText = `FL${Math.round(selectedAircraft.altitude / 100)}`;
+            syncControllerLabels();
+        }
+
+        function terminateSelectedTarget() {
+            if (!selectedAircraft) return;
+            aircrafts = aircrafts.filter(ac => ac !== selectedAircraft);
+            selectedAircraft = aircrafts.length > 0 ? aircrafts[0] : null;
+            renderAircraftTabs();
+            loadTargetIntoControls();
+        }
+
+        let swState     = 'idle';
+        let swElapsed   = 0;
+        let swStartTime = null;
+        let swRafId     = null;
+
+        function swFormat(ms) {
+            const totalSec = Math.floor(ms / 1000);
+            const minutes  = Math.floor(totalSec / 60);
+            const seconds  = totalSec % 60;
+            return {
+                main: `${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`,
+                secs: `${totalSec}s`
+            };
+        }
+
+        function getSwEls() {
+            const sa = appRole === 'standalone';
+            return {
+                display:  document.getElementById(sa ? 'sw-sa-display'   : 'sw-display'),
+                secLabel: document.getElementById(sa ? 'sw-sa-sec-label' : 'sw-sec-label'),
+                btnStart: sa ? 'sw-sa-btn-start' : 'sw-btn-start',
+                btnStop:  sa ? 'sw-sa-btn-stop'  : 'sw-btn-stop',
+                btnReset: sa ? 'sw-sa-btn-reset' : 'sw-btn-reset',
+            };
+        }
+
+        function swTick() {
+            if (swState !== 'running') return;
+            const current = swElapsed + (performance.now() - swStartTime);
+            const fmt = swFormat(current);
+            const els = getSwEls();
+            if (els.display)  els.display.textContent  = fmt.main;
+            if (els.secLabel) els.secLabel.textContent = fmt.secs;
+            swRafId = requestAnimationFrame(swTick);
+        }
+
+        function swStart() {
+            if (swState === 'running') return;
+            swState     = 'running';
+            swStartTime = performance.now();
+            swUpdateButtonStates();
+            swRafId = requestAnimationFrame(swTick);
+        }
+
+        function swStop() {
+            if (swState !== 'running') return;
+            swElapsed += performance.now() - swStartTime;
+            cancelAnimationFrame(swRafId);
+            swState = 'stopped';
+            const fmt = swFormat(swElapsed);
+            const els = getSwEls();
+            if (els.display)  els.display.textContent  = fmt.main;
+            if (els.secLabel) els.secLabel.textContent = fmt.secs;
+            swUpdateButtonStates();
+        }
+
+        function swReset() {
+            if (swState === 'running') {
+                swElapsed   = 0;
+                swStartTime = performance.now();
+            } else {
+                cancelAnimationFrame(swRafId);
+                swElapsed   = 0;
+                swStartTime = null;
+                swState     = 'idle';
+                const els = getSwEls();
+                if (els.display)  els.display.textContent  = '00:00';
+                if (els.secLabel) els.secLabel.textContent = '0s';
+                swUpdateButtonStates();
+            }
+        }
+
+        function swUpdateButtonStates() {
+            const els     = getSwEls();
+            const startOn = swState !== 'running';
+            const stopOn  = swState === 'running';
+            swSetBtn(els.btnStart, startOn);
+            swSetBtn(els.btnStop,  stopOn);
+
+            const disp = els.display;
+            const secs = els.secLabel;
+            if (!disp) return;
+
+            if (swState === 'running') {
+                disp.style.color      = '#ffffff';
+                disp.style.textShadow = '0 0 35px rgba(255,255,255,0.55),0 0 12px rgba(255,255,255,0.25)';
+                if (secs) { secs.style.color = '#34d399'; secs.style.textShadow = '0 0 16px rgba(52,211,153,0.70)'; }
+            } else if (swState === 'stopped') {
+                disp.style.color      = '#fbbf24';
+                disp.style.textShadow = '0 0 20px rgba(251,191,36,0.35)';
+                if (secs) { secs.style.color = '#d97706'; secs.style.textShadow = '0 0 10px rgba(217,119,6,0.40)'; }
+            } else {
+                disp.style.color      = '#ffffff';
+                disp.style.textShadow = '0 0 16px rgba(255,255,255,0.12)';
+                if (secs) { secs.style.color = '#34d399'; secs.style.textShadow = 'none'; }
+            }
+        }
+
+        function swSetBtn(id, active) {
+            const btn = document.getElementById(id);
+            if (!btn) return;
+            if (active) btn.classList.remove('opacity-30', 'pointer-events-none');
+            else        btn.classList.add('opacity-30', 'pointer-events-none');
+        }
+    </script>
+</body>
+</html>
